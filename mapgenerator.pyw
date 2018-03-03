@@ -50,7 +50,7 @@ class MapFragment:
         self.unique = False  # 1
         self.unflippable = False  # 2
 
-        self.path_splitted = False  # 3
+        self.path_splitted = False  # 3  # TODO: change this for -1 , 0, +1 which modulate the value of connected counter, 0 allow excluding small connecting pieces
         self.one_way = False  # 3
 
         self.left_removable = False  # 4
@@ -258,7 +258,7 @@ crop = None
 height_anchor = pixel_height_in_column(segment, global_width - 1, blue)
 l = sslist + lslist
 
-while global_width < 260 and l:
+while global_width < 250 and l:
     extend = False
     flip = False
     s = random.choice(l)
@@ -270,7 +270,14 @@ while global_width < 260 and l:
             panic_counter += 1
             continue
     else:
-        connected_counter = 0
+        if connected_counter > 0:
+            connected_counter = 0
+        else:
+            connected_counter -= 1
+            if panic_counter < 3 and connected_counter < -3:
+                l.remove(s)
+                panic_counter += 1
+                continue
     if short_top:
         if s.name.startswith("ss"):
             if not s.unflippable and random.randint(0, 1) == 1:
@@ -290,7 +297,7 @@ while global_width < 260 and l:
             l.remove(s)
             panic_counter += 1
             continue
-        if ss_ext.odd > random.randint(0, 99):
+        if (ss_ext.odd + 10*connected_counter) > random.randint(0, 99):
             global_width += ss_ext.length
             extend = True
         delta = pixel_height_in_column(segment, 0, blue)
@@ -307,7 +314,7 @@ while global_width < 260 and l:
             segment = s.image
             if s.unique:
                 lslist.remove(s)
-        if ll_ext.odd > random.randint(0, 99):
+        if (ll_ext.odd + 10*connected_counter) > random.randint(0, 99):
             global_width += ll_ext.length
             extend = True
         delta = pixel_height_in_column(segment, 0, purple)
@@ -483,7 +490,7 @@ for y in range(1, global_height-1):
             if (global_width - x - 1 + y) % 3 != 0:
                 put((global_width - x - 1, y), black)
 metadata = PngImagePlugin.PngInfo()
-metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask)
+metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
 os.chdir(os.getcwd()[:-13]+"/Maps")
 mapname = "koth_random_{}.png".format(seed)
 koth = koth.convert('RGB')
