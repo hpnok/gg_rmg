@@ -28,6 +28,8 @@ import os
 #colours used to identify connecting nodes and locators
 purple = (163, 73, 164, 255)    # l side
 blue = (0, 162, 232, 255)   # s side
+door_yellow = (255, 243, 0, 255)
+door_orange = (255, 127, 39, 255)
 gold = (255, 201, 14, 255)  # player spawn
 red = (136, 0, 21, 255)    # medcab
 oj = (244, 167, 85, 255)
@@ -39,18 +41,23 @@ black = (0, 0, 0, 255)
 violet = (110, 10, 90, 255)
 fgrey = (130, 145, 160, 255)
 
-crop_odd = 0.5  # can be used to make the map more spacious
+spawnlist = []
+lpointlist = []
+spointlist = []
+lllist = []
+sslist = []
+lslist = []
 
 
-class MapFragment:
+class Fragment:
     def __init__(self, file_name):
         self.name = file_name
         self._image = None
 
         self.unique = False  # 1
-        self.unflippable = False  # 2
+        self.flip_locked = False  # 2
 
-        self.path_splitted = False  # 3  # TODO: change this for -1 , 0, +1 which modulate the value of connected counter, 0 allow excluding small connecting pieces
+        self.path_split = 1  # 3  # TODO:-1 , 0, +1 modulate the value of connected counter, 0 allow excluding small connecting pieces
         self.one_way = False  # 3
 
         self.left_removable = False  # 4
@@ -60,30 +67,7 @@ class MapFragment:
 
     def load(self):
         if not self._image:
-            i = Image.open(self.name)
-            #self.image = i
-            try:
-                self.unique = (i.getpixel((0, 0)) != black)
-                self.unflippable = (i.getpixel((1, 0)) != black)
-
-                c = i.getpixel((2, 0))
-                if c == fgrey:
-                    self.path_splitted = True
-                elif c != black:
-                    self.one_way = True
-
-                c = i.getpixel((3, 0))
-                if c == fgrey:
-                    self.left_removable = True
-                    self.right_removable = True
-                elif c == (218, 65, 54, 255):
-                    self.left_removable = True
-                elif c == (69, 117, 233, 255):
-                    self.right_removable = True
-                self.flat = (i.getpixel((4, 0)) != black)
-            except IndexError:
-                print("header errot on {}".format(self.name))
-            self._image = i.crop((0, 1, i.width, i.height))
+            self._image = Image.open(self.name)
 
     @property
     def image(self):
@@ -91,13 +75,49 @@ class MapFragment:
         return self._image
 
 
-class PointFragment(MapFragment):
+class MapFragment(Fragment):
     def __init__(self, file_name):
         super().__init__(file_name)
+        self.pars_file_name(file_name)
 
-    def load(self):
-        if not self._image:
-            self._image = Image.open(self.name)
+    def pars_file_name(self, file_name):
+        """file name structure:
+           0:p/l left side connection
+           1:p/l right side connection
+           2:u/- unique
+           3:l/- flip locked prevent the fragment from being flipped horizontally
+           4:s/o/c- path is split (not connected) or one way (not all direction are possible) or a connector (small segment)
+           5:l/r/b/- can crop the bottom path on left/right/both side
+           6:f/- flat"""
+        if file_name[2] == 'u':
+            self.unique = True
+        if file_name[3] == 'l':
+            self.flip_locked = True
+        connexion_type = file_name[4]
+        if connexion_type == 's':
+            self.path_split = -1
+        elif connexion_type == 'o':
+            self.path_split = -1
+            self.one_way = True
+        elif connexion_type == 'c':
+            self.path_split = 0
+        crop_side = file_name[5]
+        if crop_side == 'l':
+            self.left_removable = True
+        elif crop_side == 'r':
+            self.right_removable = True
+        elif crop_side == 'b':
+            self.left_removable = True
+            self.right_removable = True
+        if file_name[6] == 'f':
+            self.flat = True
+
+
+class PointFragment(Fragment):
+    def __init__(self, file_name):
+        super().__init__(file_name)
+        self.name = file_name
+        self._image = None
 
 
 class Extension(MapFragment):
@@ -105,34 +125,6 @@ class Extension(MapFragment):
         super().__init__(file_name)
         self.length = 6
         self.odd = odd
-
-seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-random.seed(seed)
-os.chdir(os.getcwd() + "/RMG_resource")
-spawnlist = []
-lpointlist = []
-spointlist = []
-lllist = []
-sslist = []
-lslist = []
-for file in glob.glob('*.png'):
-    if file.startswith("spawn"):
-        spawnlist.append(PointFragment(file))
-    elif file.startswith("pl"):
-        lpointlist.append(PointFragment(file))
-    elif file.startswith("ps"):
-        spointlist.append(PointFragment(file))
-    elif file.startswith("ll"):
-        lllist.append(MapFragment(file))
-    elif file.startswith("ss"):
-        sslist.append(MapFragment(file))
-    elif file.startswith("ls"):
-        lslist.append(MapFragment(file))
-
-ss_ext = Extension("e1.png", 40)
-sslist.append(ss_ext)  # an extension is still a valid segment
-ll_ext = Extension("e2.png", 30)
-lllist.append(ll_ext)
 
 
 def pixel_height_in_column(image, x, color, start_y=0):
@@ -204,6 +196,19 @@ def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, lef
         if y1 - y0 > 5:
             draw = ImageDraw.Draw(map_image)
             draw.rectangle(((lx, y0), (rx, y1)), fill=white)
+        for dx in door_position:  # add nice dot to show fragment slice
+            if dx < lx:
+                continue
+            if get((dx, y0 - 1)) == black:
+                map_image.putpixel((dx, y0 - 1), door_yellow)
+            if get((dx + 1, y0 - 1)) == black:
+                map_image.putpixel((dx + 1, y0 - 1), door_yellow)
+            if get((dx, y1 + 1)) == black:
+                map_image.putpixel((dx, y1 + 1), door_orange)
+            if get((dx + 1, y1 + 1)) == black:
+                map_image.putpixel((dx + 1, y1 + 1), door_orange)
+            if dx >= rx:
+                break
     except:
         print("crop error", seed)
 
@@ -239,6 +244,29 @@ def get_walk_mask(map_image):
     map_image.putpixel((0, h - 1), c)
     return walkmask
 
+seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
+random.seed(seed)
+os.chdir(os.getcwd() + "/RMG_resource")
+for file in glob.glob('*.png'):
+    if file.startswith("spawn"):
+        spawnlist.append(PointFragment(file))
+    elif file.startswith("pl"):
+        lpointlist.append(PointFragment(file))
+    elif file.startswith("ps"):
+        spointlist.append(PointFragment(file))
+    elif file.startswith("ll"):
+        lllist.append(MapFragment(file))
+    elif file.startswith("ss"):
+        sslist.append(MapFragment(file))
+    elif file.startswith("ls"):
+        lslist.append(MapFragment(file))
+
+ss_ext = Extension("ee--c-f1.png", 40)
+sslist.append(ss_ext)  # an extension is still a valid segment
+ll_ext = Extension("ee--c-f2.png", 35)
+lllist.append(ll_ext)
+ls_ext = Extension("ee--c-f3.png", 30)
+lslist.append(ll_ext)
 
 spawn = random.choice(spawnlist)
 segment_list = [spawn]
@@ -250,6 +278,7 @@ short_top = True    # all spawns are ss connected
 panic_counter = 0  # prevent picking too many times undesired segments
 long_counter = 0
 connected_counter = 0
+door_position = []
 
 previous_width = 0
 previous_anchor = 0
@@ -263,8 +292,8 @@ while global_width < 250 and l:
     flip = False
     s = random.choice(l)
     s.load()
-    if not s.path_splitted:
-        connected_counter += 1
+    if s.path_split >= 0:  # not split
+        connected_counter += s.path_split
         if panic_counter < 3 < connected_counter:
             l.remove(s)
             panic_counter += 1
@@ -273,21 +302,21 @@ while global_width < 250 and l:
         if connected_counter > 0:
             connected_counter = 0
         else:
-            connected_counter -= 1
-            if panic_counter < 3 and connected_counter < -3:
+            connected_counter += s.path_split
+            if panic_counter < 3 and connected_counter < -2:
                 l.remove(s)
                 panic_counter += 1
                 continue
     if short_top:
         if s.name.startswith("ss"):
-            if not s.unflippable and random.randint(0, 1) == 1:
+            if not s.flip_locked and random.randint(0, 1) == 1:
                 segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
                 flip = True
             else:
                 segment = s.image
             if s.unique:
                 sslist.remove(s)
-        elif s.name.startswith("ls") and not s.unflippable:
+        elif s.name.startswith("ls") and not s.flip_locked:
             segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
             flip = True
             long_counter += 1
@@ -303,7 +332,7 @@ while global_width < 250 and l:
         delta = pixel_height_in_column(segment, 0, blue)
     else:
         if s.name.startswith("ll"):
-            if not s.unflippable and random.randint(0, 1) == 1:
+            if not s.flip_locked and random.randint(0, 1) == 1:
                 segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
                 flip = True
             else:
@@ -325,10 +354,14 @@ while global_width < 250 and l:
     koth = koth.crop((0, 0, global_width, 300))
     if extend:
         if short_top:
-            koth.paste(ss_ext.image, (global_width - width - ss_ext.length, height_anchor))
+            px = global_width - width - ss_ext.length
+            koth.paste(ss_ext.image, (px, height_anchor))
         else:
-            koth.paste(ll_ext.image, (global_width - width - ll_ext.length, height_anchor))
-    koth.paste(segment, (global_width-width, height_anchor-delta))
+            px = global_width - width - ll_ext.length
+            koth.paste(ll_ext.image, (px, height_anchor))
+        door_position.append(px - 1)
+    koth.paste(segment, (global_width - width, height_anchor - delta))
+    door_position.append(global_width - width - 1)
 
     if crop:
         if flip:
@@ -403,9 +436,9 @@ reverseddraft.putpixel((0, 0), black)
 minx, miny = findpixel(reverseddraft, white)
 if maxy < 5:
     maxy = 5
-if miny < 8:
-    miny = 8
-cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 8))
+if miny < 20:
+    miny = 20
+cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
 global_height = cropddraft.height
 
 #get capture point here and turn pixel locators white
