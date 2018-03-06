@@ -13,16 +13,12 @@ import os
 #    possibility to add a crate in a ll junction?
 #    ll11 - ll13, ls8-ls14
 #    if 2 section repeat or mirror repeat add at least one extension
-#    flags: reusable, repeatable, (down/up)slope or (low/high/both/none)flat, allconnected/split/directiondependant, 
-#TODO: use tiled pixel art background, color key the black part of the map around a fitting color for the theme
+#    flags: reusable, repeatable, (down/up)slope or (low/high/both/none)flat, allconnected/split/directiondependant,
 #TODO: use other color to mark ceiling (remove them to have a "open" map)
 #TODO: have 1 oe 2 random color to remove/add some part of the map
-#TODO: add a new rule of map fragment the "weird one" to prevent map being too funky or just prevent duplicate?
 #TODO: 3cp
-#TODO: add a flag to prevent rotation of some slice (like the stair in a one way pit), increase odds for "extensions", use argv to change map properties?
+#TODO: use argv to change map generation variables
 #https://www.saltycrane.com/blog/2007/12/how-to-pass-command-line-arguments-to/
-#possible optimisations: everything
-#get maps, improve the prefix system later
 #what prevents a map from being taller then 300 pixels?
 
 #colours used to identify connecting nodes and locators
@@ -77,6 +73,9 @@ class Fragment:
 
         self.flat = False  # 5
 
+        self.lc = blue
+        self.rc = blue
+
     def load(self):
         if not self._image:
             self._image = Image.open(self.name)
@@ -101,6 +100,10 @@ class MapFragment(Fragment):
            4:s/o/c- path is split (not connected) or one way (not all direction are possible) or a connector (small segment)
            5:l/r/b/- can crop the bottom path on left/right/both side
            6:f/- flat"""
+        if file_name[0] == 'l':
+            self.lc = purple
+        if file_name[1] == 'l':
+            self.rc = purple
         if file_name[2] == 'u':
             self.unique = True
         if file_name[3] == 'l':
@@ -130,13 +133,136 @@ class PointFragment(Fragment):
         super().__init__(file_name)
         self.name = file_name
         self._image = None
+        if file_name[1] == 'l':
+            self.lc = purple
 
 
 class Extension(MapFragment):
-    def __init__(self, file_name, odd):
+    def __init__(self, file_name, odd, left_color, right_color):
         super().__init__(file_name)
         self.length = 6
         self.odd = odd
+        self.lc = left_color
+        self.rc = right_color
+
+
+class Segment:
+    def __init__(self, fragment, reverse, x, extension=None):
+        self.f = fragment
+        self.ext = extension
+        self.reversed = reverse
+        self.x = x
+        self.y = 0
+        self.crop_s = None
+
+    def get_image(self):
+        if self.reversed:
+            return self.f.image.transpose(Image.FLIP_LEFT_RIGHT)
+        return self.f.image
+
+    def crop(self, map_image):
+        if not self.crop_s:
+            return
+        get = map_image.getpixel
+        left = self.crop_s
+        right = self
+        lw, lh = left.f.image.size
+        rw, rh = self.f.image.size
+        try:
+            if left.f.left_removable == left.f.right_removable:  # must check for 2 pairs
+                lx1, top1 = find_pixel_in_box(map_image, left.x + 1, left.y + 1, left.x + lw, left.y + lh, crp_px)
+                lx2, top2 = find_pixel_in_box(map_image, lx1 + 1, top1, left.x + lw - 1, left.y + lh, crp_px)
+                if lx2 is None:  # there was no pixel to the right of the first one, then the first one found was the rightmost one
+                    lx, ltop = lx1, top1
+                else:
+                    lx, ltop = lx2, top2
+            else:
+                lx, ltop = find_pixel_in_box(map_image, left.x, left.y, left.x + lw, left.y + lh, crp_px)
+            lbot = pixel_height_in_column(map_image, lx, crp_px, start_y=ltop + 1)
+
+            if right.f.left_removable == right.f.right_removable:
+                rx1, top1 = find_pixel_in_box(map_image, right.x + 1, right.y + 1, right.x + rw - 1, right.y + rh, crp_px)
+                rx2, top2 = find_pixel_in_box(map_image, right.x + 1, top1, rx1 - 1, right.y + rh, crp_px)
+                if rx2 is None:
+                    rx, rtop = rx1, top1
+                else:
+                    rx, rtop = rx2, top2
+            else:
+                rx, rtop = find_pixel_in_box(map_image, right.x, right.y, right.x + rw - 1, right.y + rh, crp_px)
+            rbot = pixel_height_in_column(map_image, rx, crp_px, start_y=rtop + 1)
+
+            y0 = max(ltop, rtop)
+            y1 = min(lbot, rbot)
+            if y1 - y0 > 6:
+                draw = ImageDraw.Draw(map_image)
+                draw.rectangle(((lx, y0), (rx, y1)), fill=air_wall)
+                for dx in door_position:  # add nice dot to show fragment slice
+                    if dx < lx:
+                        continue
+                    if dx >= rx:
+                        break
+                    if get((dx, y0 - 1)) == black:
+                        map_image.putpixel((dx, y0 - 1), door_yellow)
+                    if get((dx + 1, y0 - 1)) == black:
+                        map_image.putpixel((dx + 1, y0 - 1), door_yellow)
+                    if get((dx, y1 + 1)) == black:
+                        map_image.putpixel((dx, y1 + 1), door_orange)
+                    if get((dx + 1, y1 + 1)) == black:
+                        map_image.putpixel((dx + 1, y1 + 1), door_orange)
+        except:
+            print("crop error", seed)
+
+
+class SegmentList:
+    def __init__(self):
+        self.l = []
+        self.previous_crop = False
+        self.spawn = None
+
+    def get_prev_non_ext(self):
+        for i in reversed(self.l):
+            if not i.reversed:
+                return i
+        return None
+
+    def push(self, segment, crop_left, crop_right):
+        if not self.spawn:
+            self.l.append(segment)
+            self.spawn = segment
+        else:
+            if not segment.ext:
+                if self.previous_crop and crop_left:
+                    if self.l[-1].ext:
+                        segment.crop_s = self.l[-2]
+                    else:
+                        segment.crop_s = self.l[-1]
+                self.previous_crop = crop_right
+            self.l.append(segment)
+
+    def build_map(self, g_width):
+        map_image = Image.new('RGBA', (g_width, 300), black)
+        it = iter(self.l)
+        i = next(it)  # spawn
+        map_image.paste(i.f.image, (0, 0))
+        cr = blue
+        try:
+            while True:
+                # the position of the previous "door dot", spawn are always short on top
+                height_anchor = pixel_height_in_column(map_image, i.x + i.f.image.width - 1, cr, start_y=i.y)
+                i = next(it)
+                if i.reversed:
+                    cl, cr = i.f.rc, i.f.lc
+                else:
+                    cl, cr = i.f.lc, i.f.rc
+                im = i.get_image()
+                delta = pixel_height_in_column(im, 0, cl)  # the position of the current "door dot" to be matched with the previous on
+                y = height_anchor - delta
+                i.y = y
+                map_image.paste(im, (i.x, y))
+                i.crop(map_image)
+        except StopIteration:
+            pass
+        return map_image
 
 
 def pixel_height_in_column(image, x, color, start_y=0):
@@ -192,16 +318,7 @@ def findFirstNonSolid(image):
             return xp, yp
 
 
-def crop_fill(image, w, h):
-    """Image.crop() fill with 0, 0, 0, 0
-    crop_fill() fill with 0, 0, 0, 255
-    """
-    b = Image.new('RGBA', (w, h), black)
-    b.paste(image)
-    return b
-
-
-def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, left_y0, right_x0, right_y0, left_height, right_height):
+"""def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, left_y0, right_x0, right_y0, left_height, right_height):
     get = map_image.getpixel
     try:
         if double_check_left:
@@ -226,24 +343,25 @@ def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, lef
         rbot = pixel_height_in_column(map_image, rx, crp_px, start_y=rtop + 1)
         y0 = max(ltop, rtop)
         y1 = min(lbot, rbot)
-        if y1 - y0 > 5:
+        if y1 - y0 > 6:
             draw = ImageDraw.Draw(map_image)
             draw.rectangle(((lx, y0), (rx, y1)), fill=air_wall)
-        for dx in door_position:  # add nice dot to show fragment slice
-            if dx < lx:
-                continue
-            if get((dx, y0 - 1)) == black:
-                map_image.putpixel((dx, y0 - 1), door_yellow)
-            if get((dx + 1, y0 - 1)) == black:
-                map_image.putpixel((dx + 1, y0 - 1), door_yellow)
-            if get((dx, y1 + 1)) == black:
-                map_image.putpixel((dx, y1 + 1), door_orange)
-            if get((dx + 1, y1 + 1)) == black:
-                map_image.putpixel((dx + 1, y1 + 1), door_orange)
-            if dx >= rx:
-                break
+            for dx in door_position:  # add nice dot to show fragment slice
+                if dx < lx:
+                    continue
+                if get((dx, y0 - 1)) == black:
+                    map_image.putpixel((dx, y0 - 1), door_yellow)
+                if get((dx + 1, y0 - 1)) == black:
+                    map_image.putpixel((dx + 1, y0 - 1), door_yellow)
+                if get((dx, y1 + 1)) == black:
+                    map_image.putpixel((dx, y1 + 1), door_orange)
+                if get((dx + 1, y1 + 1)) == black:
+                    map_image.putpixel((dx + 1, y1 + 1), door_orange)
+                if dx >= rx:
+                    break
     except:
         print("crop error", seed)
+"""
 
 
 def get_walk_mask(map_image):
@@ -287,25 +405,25 @@ def get_walk_mask(map_image):
     return walkmask
 
 
-def add_bg(map_image, bg_file_name):
+def add_bg(map_image, bg_file_name, sw):
     im = Image.open("bg/" + bg_file_name + ".png")
     bw, bh = im.size
     w, h = map_image.size
     b = Image.new('RGBA', (w, h), im.getpixel((0, bh - 1)))
-    if bw < w:
+    if bw < w - 2*sw:
         x = 0
         while x < w:
             b.paste(im, (x, 0))
             x += bw
-        bw = w
+        bw = w - 2*sw
     else:
-        b.paste(im, ((bw - w)//2, 0))
+        b.paste(im, ((w - 2*sw - bw)//2, 0))
     b.alpha_composite(map_image)
     b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 3117203868
+#seed = 4204531326
 random.seed(seed)
 print(seed)
 os.chdir(os.getcwd() + "/RMG_resource")
@@ -323,37 +441,38 @@ for file in glob.glob('*.png'):
     elif file.startswith("ls"):
         lslist.append(MapFragment(file))
 
-ss_ext = Extension("ee--c-f1.png", 40)
+ss_ext = Extension("ee--c-f1.png", 40, blue, blue)
 sslist.append(ss_ext)  # an extension is still a valid segment
-ll_ext = Extension("ee--c-f2.png", 35)
+ll_ext = Extension("ee--c-f2.png", 35, purple, purple)
 lllist.append(ll_ext)
-ls_ext = Extension("ee--c-f3.png", 30)
-lslist.append(ll_ext)
+ls_ext = Extension("ee--c-f3.png", 30, purple, blue)
+lslist.append(ls_ext)
 
 spawn = random.choice(spawnlist)
-segment_list = [spawn]
-segment = spawn.image
-koth = Image.new('RGBA', segment.size, black)
-koth.paste(segment, (0, 0))
-global_width = segment.width
+#segment_list = [spawn]
+#segment = spawn.image
+#koth = Image.new('RGBA', segment.size, black)
+#koth.paste(segment, (0, 0))
+global_width = spawn.image.width
 short_top = True    # all spawns are ss connected
 panic_counter = 0  # prevent picking too many times undesired segments
 long_counter = 0
 connected_counter = 0
-door_position = []
+door_position = []  # list of door location
+segment_list = SegmentList()
+segment_list.push(Segment(spawn, False, 0), False, False)
+#map_seg = [Segment(spawn, False, 0)]
 
 previous_width = 0
 previous_anchor = 0
-crop = None
 
-height_anchor = pixel_height_in_column(segment, global_width - 1, blue)
 l = sslist + lslist
 
 while global_width < 250 and l:
-    extend = False
+    extend = None
     flip = False
     s = random.choice(l)
-    #s.load()
+    # pick a piece, check if it fits the desired sequence, if not remove it from the pool
     if s.path_split >= 0:  # not split
         connected_counter += s.path_split
         if panic_counter < 3 < connected_counter:
@@ -370,16 +489,13 @@ while global_width < 250 and l:
                 panic_counter += 1
                 continue
     if short_top:
-        if s.name.startswith("ss"):
+        if s.lc == s.rc:  #ss
             if not s.flip_locked and random.randint(0, 1) == 1:
-                segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
                 flip = True
-            else:
-                segment = s.image
             if s.unique:
                 sslist.remove(s)
-        elif s.name.startswith("ls") and not s.flip_locked:
-            segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
+        elif s.lc == purple and not s.flip_locked:  #ls
+            short_top = False
             flip = True
             long_counter += 1
             if s.unique:
@@ -389,109 +505,61 @@ while global_width < 250 and l:
             panic_counter += 1
             continue
         if (ss_ext.odd + 10*connected_counter) > random.randint(0, 99):
-            global_width += ss_ext.length
-            extend = True
-        delta = pixel_height_in_column(segment, 0, blue)
+            extend = ss_ext
     else:
-        if s.name.startswith("ll"):
+        if s.lc == s.rc:  #ll
             if not s.flip_locked and random.randint(0, 1) == 1:
-                segment = s.image.transpose(Image.FLIP_LEFT_RIGHT)
                 flip = True
-            else:
-                segment = s.image
             if s.unique:
                 lllist.remove(s)
-        else:
-            segment = s.image
+        else:  #ls
+            short_top = True
             if s.unique:
                 lslist.remove(s)
         if (ll_ext.odd + 10*connected_counter) > random.randint(0, 99):
-            global_width += ll_ext.length
-            extend = True
-        delta = pixel_height_in_column(segment, 0, purple)
+            extend = ll_ext
         long_counter += 1
 
-    width = segment.width
-    global_width += width
-    #koth = koth.crop((0, 0, global_width, 300))
-    koth = crop_fill(koth, global_width, 300)
     if extend:
-        if short_top:
-            px = global_width - width - ss_ext.length
-            koth.paste(ss_ext.image, (px, height_anchor))
-        else:
-            px = global_width - width - ll_ext.length
-            koth.paste(ll_ext.image, (px, height_anchor))
-        door_position.append(px - 1)
-    koth.paste(segment, (global_width - width, height_anchor - delta))
-    door_position.append(global_width - width - 1)
+        door_position.append(global_width - 1)
+        segment_list.push(Segment(extend, False, global_width, extension=True), False, False)
+        global_width += extend.length
 
-    if crop:
-        if flip:
-            if s.right_removable:
-                ps = segment_list[-1]
-                crop_bot_path(koth, ps.left_removable == ps.right_removable, s.left_removable == s.right_removable,
-                              previous_width - ps.image.width, previous_anchor, global_width - width, height_anchor, ps.image.height, segment.height)
-        else:
-            if s.left_removable:
-                ps = segment_list[-1]
-                crop_bot_path(koth, ps.left_removable == ps.right_removable, s.left_removable == s.right_removable,
-                              previous_width - ps.image.width, previous_anchor, global_width - width, height_anchor, ps.image.height, segment.height)
-
-    previous_anchor = height_anchor
-    previous_width = global_width
-    crop = False
+    door_position.append(global_width - 1)
     if flip:
-        if s.left_removable:
-            crop = True
-    elif s.right_removable:
-        crop = True
-
-    pos = pixel_height_in_column(koth, global_width - 1, blue)
-    if pos is None:
-        short_top = False
-        l = lllist + lslist
-        height_anchor = pixel_height_in_column(koth, global_width - 1, purple)
+        cl, cr = s.right_removable, s.left_removable
     else:
-        short_top = True
+        cl, cr = s.left_removable, s.right_removable
+    segment_list.push(Segment(s, flip, global_width), cl, cr)
+    global_width += s.image.width
+
+    if short_top:
         l = sslist + lslist
-        height_anchor = pos
-    #koth.show()
-    segment_list.append(s)
+    else:
+        l = lllist + lslist
     panic_counter = 0
 
-extend = False
-delta = 0
+#add the point
+extend = None
 if short_top:
     s = random.choice(spointlist)
-    segment = s.image
-    delta = pixel_height_in_column(segment, 0, blue)
     if ss_ext.odd > random.randint(0, 99):
-        global_width += ss_ext.length
-        extend = True
+        extend = ss_ext
 else:
     s = random.choice(lpointlist)
-    segment = s.image
-    delta = pixel_height_in_column(segment, 0, purple)
     if ll_ext.odd > random.randint(0, 99):
-        global_width += ll_ext.length
-        extend = True
-#add the point
-width = segment.width
-global_width += width
-#koth = koth.crop((0, 0, global_width, 300))
-koth = crop_fill(koth, global_width, 300)
+        extend = ll_ext
+
 if extend:
-    if short_top:
-        koth.paste(ss_ext.image, (global_width - width - ss_ext.length, height_anchor))
-    else:
-        koth.paste(ll_ext.image, (global_width - width - ll_ext.length, height_anchor))
-#draft = Image.new('RGBA', (global_width, 300), black)
-#draft.paste(koth, (0, 0))
+    door_position.append(global_width - 1)
+    segment_list.push(Segment(extend, False, global_width, extension=True), False, False)
+    global_width += extend.length
 
+door_position.append(global_width - 1)
+segment_list.push(Segment(s, False, global_width), False, False)
+global_width += s.image.width
 
-#draft = koth.crop((0, 0, global_width, 300))
-koth.paste(segment, (global_width-width, height_anchor-delta))
+koth = segment_list.build_map(global_width)
 
 #cut black border
 maxx, maxy = findFirstNonSolid(koth)
@@ -506,12 +574,7 @@ cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
 global_height = cropddraft.height
 
 #get capture point here and turn pixel locators white
-#koth.show()
-toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - width, 0, global_width - 1, global_height - 1)
-#toppx, toppy = find_pixel_in_box(cropddraft, global_width - width, 0, global_width - 1, global_height - 1, pgrey)
-#cropddraft.putpixel((toppx, toppy), white)
-#botpy = pixel_height_in_column(cropddraft, toppx, pgrey)
-#cropddraft.putpixel((toppx, botpy), white)
+toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
 
 #final layout, add mirrored half
 koth = koth.crop((0, 0, 2*global_width, global_height))
@@ -544,7 +607,6 @@ entities += '{END ENTITIES}'
 walkmask = get_walk_mask(koth)
 
 #recolour n stuff
-koth.putpixel((0, global_height-1), black)
 medcab = Image.open("medcab.png")
 koth.paste(medcab, (cabx, caby - 9))
 koth.paste(medcab, (global_width - cabx - 7, caby - 9))
@@ -595,8 +657,7 @@ for y in range(1, global_height-1):
                 put((x, y), black)
             if (global_width - x - 1 + y) % 3 != 0:
                 put((global_width - x - 1, y), black)
-#koth = add_bg(koth, "SC")
-koth = add_bg(koth, selected_style[0])
+koth = add_bg(koth, selected_style[0], spawn_width)
 metadata = PngImagePlugin.PngInfo()
 metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
 os.chdir(os.getcwd()[:-13]+"/Maps")
@@ -604,10 +665,6 @@ mapname = "koth_random_{}.png".format(seed)
 koth = koth.convert('RGB')
 #koth.show()
 koth.save(mapname, "png", optimize=True, pnginfo=metadata)
-#newmap = Image.open("koth_random.png")
-#print(newmap.text)
-#ggon = Image.open("a5.png")
-#print(ggon.text)
 os.chdir(os.getcwd()[:-5])
 file = open("randomname.gg2", "w")
 file.write(mapname[:-4])
