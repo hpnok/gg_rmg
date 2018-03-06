@@ -33,13 +33,18 @@ door_orange = (255, 127, 39, 255)
 gold = (255, 201, 14, 255)  # player spawn
 red = (136, 0, 21, 255)    # medcab
 oj = (244, 167, 85, 255)
-tgrey = (195, 195, 195, 255)    # top of cap zone
-bgrey = (127, 127, 127, 255)    # bot of cap zone
+#tgrey = (195, 195, 195, 254)    # top of cap zone
+pgrey = (127, 127, 127)    # bot of cap zone
 white = (255, 255, 255, 255)
 black = (0, 0, 0, 255)
 
-violet = (110, 10, 90, 255)
+crp_px = (198, 44, 90, 200)
 fgrey = (130, 145, 160, 255)
+
+air_wall = (56, 74, 188, 200)
+air_air = (255, 255, 255, 0)
+
+style = ["BD", "CS", "IN", "MN", "SC", "CF"]
 
 spawnlist = []
 lpointlist = []
@@ -144,58 +149,79 @@ def find_pixel_in_box(image, x0, y0, x1, y1, color):
     return None, None
 
 
-def rightposition(image, colour):
-    width, height = image.size
-    band = image.crop((width-1, 0, width, height))
-    for i, pixel in list(enumerate(band.getdata())):
-        if pixel == colour:
-            return i
-
-
-def leftposition(image, colour):
-    height = image.height
-    band = image.crop((0, 0, 1, height))
-    for i, pixel in list(enumerate(band.getdata())):
-        if pixel == colour:
-            return i
+def find_cap_zone(image, x0, y0 , x1, y1):
+    get = image.getpixel
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            if get((x, y))[:3] == pgrey:
+                for yp in range(y, y1 + 1):
+                    if get((x, yp))[:3] == pgrey:
+                        if get((x, y))[3] == 200:
+                            image.putpixel((x, y), air_wall)
+                        else:
+                            image.putpixel((x, y), air_air)
+                        if get((x, yp))[3] == 200:
+                            image.putpixel((x, y), air_wall)
+                        else:
+                            image.putpixel((x, y), air_air)
+                        return x, y, yp
+                return x, y, y1 + 1
+    return None, None, None
 
 
 def findpixel(image, colour):
     width, height = image.size
-    for i, pixel in list(enumerate(image.getdata())):
+    for i, pixel in enumerate(image.getdata()):
         if pixel == colour:
             yp, xp = divmod(i, width)
             return xp, yp
+
+
+def findFirstNonSolid(image):
+    width, height = image.size
+    for i, pixel in enumerate(image.getdata()):
+        if pixel[3] < 255:
+            yp, xp = divmod(i, width)
+            return xp, yp
+
+
+def crop_fill(image, w, h):
+    """Image.crop() fill with 0, 0, 0, 0
+    crop_fill() fill with 0, 0, 0, 255
+    """
+    b = Image.new('RGBA', (w, h), black)
+    b.paste(image)
+    return b
 
 
 def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, left_y0, right_x0, right_y0, left_height, right_height):
     get = map_image.getpixel
     try:
         if double_check_left:
-            lx1, top1 = find_pixel_in_box(map_image, left_x0 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, violet)
-            lx2, top2 = find_pixel_in_box(map_image, lx1 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, violet)
+            lx1, top1 = find_pixel_in_box(map_image, left_x0 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, crp_px)
+            lx2, top2 = find_pixel_in_box(map_image, lx1 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, crp_px)
             if lx2 is None:
                 lx, ltop = lx1, top1
             else:
                 lx, ltop = lx2, top2
         else:
-            lx, ltop = find_pixel_in_box(map_image, left_x0, left_y0, right_x0, left_y0 + left_height, violet)
-        lbot = pixel_height_in_column(map_image, lx, violet, start_y=ltop + 1)
+            lx, ltop = find_pixel_in_box(map_image, left_x0, left_y0, right_x0, left_y0 + left_height, crp_px)
+        lbot = pixel_height_in_column(map_image, lx, crp_px, start_y=ltop + 1)
         if double_check_right:
-            rx1, top1 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, map_image.width - 1, right_y0 + right_height, violet)
-            rx2, top2 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, rx1 - 1, right_y0 + right_height, violet)
+            rx1, top1 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, map_image.width - 1, right_y0 + right_height, crp_px)
+            rx2, top2 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, rx1 - 1, right_y0 + right_height, crp_px)
             if rx2 is None:
                 rx, rtop = rx1, top1
             else:
                 rx, rtop = rx2, top2
         else:
-            rx, rtop = find_pixel_in_box(map_image, right_x0, right_y0, map_image.width - 1, right_y0 + right_height, violet)
-        rbot = pixel_height_in_column(map_image, rx, violet, start_y=rtop + 1)
+            rx, rtop = find_pixel_in_box(map_image, right_x0, right_y0, map_image.width - 1, right_y0 + right_height, crp_px)
+        rbot = pixel_height_in_column(map_image, rx, crp_px, start_y=rtop + 1)
         y0 = max(ltop, rtop)
         y1 = min(lbot, rbot)
         if y1 - y0 > 5:
             draw = ImageDraw.Draw(map_image)
-            draw.rectangle(((lx, y0), (rx, y1)), fill=white)
+            draw.rectangle(((lx, y0), (rx, y1)), fill=air_wall)
         for dx in door_position:  # add nice dot to show fragment slice
             if dx < lx:
                 continue
@@ -219,23 +245,32 @@ def get_walk_mask(map_image):
     get = map_image.getpixel
     w, h = map_image.size
     c = get((0, h - 1))
-    map_image.putpixel((0, h - 1), white)
+    map_image.putpixel((0, h - 1), (255, 255, 255, 0))
     walkmask = '{WALKMASK}' + chr(10) + str(w) + chr(10) + "{}".format(h) + chr(10)
     fill = 0
     numv = 0
-    for y in range(0, h):
+    for i, pixel in enumerate(map_image.getdata()):
+        numv <<= 1
+        if pixel[3] == 255:
+            numv += 1
+        fill += 1
+        if fill == 6:
+            walkmask += chr(numv + 32)
+            numv = 0
+            fill = 0
+    """for y in range(0, h):
         for x in range(0, w):
             numv <<= 1
-            if get((x, y)) != white:
-                if get((x, y)) == violet:  # TODO: spaghetti
-                    map_image.putpixel((x, y), white)
-                else:
-                    numv += 1
+            if get((x, y))[3] == 255:
+                #if get((x, y)) == crp_px:  # TODO: spaghetti
+                #    map_image.putpixel((x, y), white)
+                #else:
+                numv += 1
             fill += 1
             if fill == 6:
                 walkmask += chr(numv + 32)
                 numv = 0
-                fill = 0
+                fill = 0"""
     if fill > 0:
         for fill in range(fill, 6, 1):
             numv <<= 1
@@ -244,8 +279,28 @@ def get_walk_mask(map_image):
     map_image.putpixel((0, h - 1), c)
     return walkmask
 
+
+def add_bg(map_image, bg_file_name):
+    im = Image.open("bg/" + bg_file_name + ".png")
+    bw, bh = im.size
+    w, h = map_image.size
+    b = Image.new('RGBA', (w, h), im.getpixel((0, bh - 1)))
+    if bw < w:
+        x = 0
+        while x < w:
+            b.paste(im, (x, 0))
+            x += bw
+        bw = w
+    else:
+        b.paste(im, ((bw - w)//2, 0))
+    b.alpha_composite(map_image)
+    b.show()
+    return b
+
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
+#seed = 3117203868
 random.seed(seed)
+print(seed)
 os.chdir(os.getcwd() + "/RMG_resource")
 for file in glob.glob('*.png'):
     if file.startswith("spawn"):
@@ -291,7 +346,7 @@ while global_width < 250 and l:
     extend = False
     flip = False
     s = random.choice(l)
-    s.load()
+    #s.load()
     if s.path_split >= 0:  # not split
         connected_counter += s.path_split
         if panic_counter < 3 < connected_counter:
@@ -351,7 +406,8 @@ while global_width < 250 and l:
 
     width = segment.width
     global_width += width
-    koth = koth.crop((0, 0, global_width, 300))
+    #koth = koth.crop((0, 0, global_width, 300))
+    koth = crop_fill(koth, global_width, 300)
     if extend:
         if short_top:
             px = global_width - width - ss_ext.length
@@ -416,7 +472,8 @@ else:
 #add the point
 width = segment.width
 global_width += width
-koth = koth.crop((0, 0, global_width, 300))
+#koth = koth.crop((0, 0, global_width, 300))
+koth = crop_fill(koth, global_width, 300)
 if extend:
     if short_top:
         koth.paste(ss_ext.image, (global_width - width - ss_ext.length, height_anchor))
@@ -430,10 +487,10 @@ if extend:
 koth.paste(segment, (global_width-width, height_anchor-delta))
 
 #cut black border
-maxx, maxy = findpixel(koth, white)
+maxx, maxy = findFirstNonSolid(koth)
 reverseddraft = koth.transpose(Image.FLIP_TOP_BOTTOM)
 reverseddraft.putpixel((0, 0), black)
-minx, miny = findpixel(reverseddraft, white)
+minx, miny = findFirstNonSolid(reverseddraft)
 if maxy < 5:
     maxy = 5
 if miny < 20:
@@ -442,10 +499,12 @@ cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
 global_height = cropddraft.height
 
 #get capture point here and turn pixel locators white
-toppx, toppy = find_pixel_in_box(cropddraft, global_width - width, 0, global_width - 1, global_height - 1, tgrey)
-cropddraft.putpixel((toppx, toppy), white)
-botpy = pixel_height_in_column(cropddraft, toppx, bgrey)
-cropddraft.putpixel((toppx, botpy), white)
+#koth.show()
+toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - width, 0, global_width - 1, global_height - 1)
+#toppx, toppy = find_pixel_in_box(cropddraft, global_width - width, 0, global_width - 1, global_height - 1, pgrey)
+#cropddraft.putpixel((toppx, toppy), white)
+#botpy = pixel_height_in_column(cropddraft, toppx, pgrey)
+#cropddraft.putpixel((toppx, botpy), white)
 
 #final layout, add mirrored half
 koth = koth.crop((0, 0, 2*global_width, global_height))
@@ -497,14 +556,14 @@ get = koth.getpixel
 put = koth.putpixel
 for y in range(1, global_height-1):
     for x in range(1, spawn_width - 1):
-        if get((x, y)) == white:
+        if get((x, y))[3] == 200:
             put((x, y), rsgrey)
             put((global_width - x - 1, y), bsgrey)
             if spawny - 7 < y < spawny - 3:    # 139 < y < 143
                 put((x, y), (167, 99, 97, 255))
                 put((global_width - x - 1, y), (97, 129, 167, 255))
     for x in range(spawn_width + 1, global_width//2):
-        if get((x, y)) == white:
+        if get((x, y))[3] == 200:
             if y < 4:
                 put((x, y), ((rgr - 10), (rgg - 10), (rgb - 10), 255))
                 put((global_width - x - 1, y), ((rgr - 10), (rgg - 10), (rgb - 10), 255))
@@ -522,6 +581,8 @@ for y in range(1, global_height-1):
                 put((x, y), black)
             if (global_width - x - 1 + y) % 3 != 0:
                 put((global_width - x - 1, y), black)
+#koth = add_bg(koth, "SC")
+koth = add_bg(koth, random.choice(style))
 metadata = PngImagePlugin.PngInfo()
 metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
 os.chdir(os.getcwd()[:-13]+"/Maps")
