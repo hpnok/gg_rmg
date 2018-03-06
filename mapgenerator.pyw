@@ -44,7 +44,14 @@ fgrey = (130, 145, 160, 255)
 air_wall = (56, 74, 188, 200)
 air_air = (255, 255, 255, 0)
 
-style = ["BD", "CS", "IN", "MN", "SC", "CF"]
+style = [
+    ("CS", (7, 11, 7)),
+    ("IN", (-34, -25, -29)),
+    ("MN", (-23, -26, -28)),
+    ("SC", (1, 8, 12)),
+    ("CF", (12, 15, 14)),
+    ("BD", (-34, -27, -27))
+    ]
 
 spawnlist = []
 lpointlist = []
@@ -548,10 +555,17 @@ door = door.transpose(Image.FLIP_LEFT_RIGHT)
 koth.paste(door, (global_width - spawn_width - 1, dh))
 # imageops.colorize needs type L (black/white) images
 # randomgreys
-rsgrey = (random.randrange(146, 154), random.randrange(140, 148), random.randrange(135, 145), 255)
-rgrey = (random.randrange(152, 163), random.randrange(152, 163), random.randrange(152, 163), 255)
+selected_style = random.choice(style)
+rsgrey = (random.randrange(146, 154) + selected_style[1][0]//2,
+          random.randrange(140, 148) + selected_style[1][1]//2,
+          random.randrange(135, 145) + selected_style[1][2]//2, 255)
+rgrey = (random.randrange(152, 163) + selected_style[1][0],
+         random.randrange(152, 163) + selected_style[1][0],
+         random.randrange(152, 163) + selected_style[1][0], 255)
 (rgr, rgg, rgb, rgs) = rgrey
-bsgrey = (random.randrange(134, 142), random.randrange(142, 147), random.randrange(146, 150), 255)
+bsgrey = (random.randrange(134, 142) + selected_style[1][0]//2,
+          random.randrange(142, 147) + selected_style[1][1]//2,
+          random.randrange(146, 150) + selected_style[1][2]//2, 255)
 get = koth.getpixel
 put = koth.putpixel
 for y in range(1, global_height-1):
@@ -582,7 +596,7 @@ for y in range(1, global_height-1):
             if (global_width - x - 1 + y) % 3 != 0:
                 put((global_width - x - 1, y), black)
 #koth = add_bg(koth, "SC")
-koth = add_bg(koth, random.choice(style))
+koth = add_bg(koth, selected_style[0])
 metadata = PngImagePlugin.PngInfo()
 metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
 os.chdir(os.getcwd()[:-13]+"/Maps")
