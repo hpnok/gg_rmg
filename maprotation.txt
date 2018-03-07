@@ -1,0 +1,2 @@
+koth_random
+cp_random

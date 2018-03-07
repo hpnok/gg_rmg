@@ -4,10 +4,15 @@ object_event_add(WinBanner, ev_create, 0, "
         execute_shell('mapgenerator.pyw','');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
+    else if (global.nextMap = 'cp_random') {
+        //run mapgenerator.exe with cp
+        execute_shell('mapgenerator.pyw','CP');
+        alarm[0] = 5 * 30 * global.delta_factor;
+    }
 ");
 
 object_event_add(WinBanner, ev_alarm, 0, "
-    if((global.isHost == true) && (global.nextMap = 'koth_random')) {
+    if((global.isHost == true) && ((global.nextMap = 'koth_random') || (global.nextMap = 'cp_random'))) {
         if (file_exists('randomname.gg2')) {
             var nextRandom, nextRandomFile;
 

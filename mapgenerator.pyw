@@ -2,6 +2,7 @@ import random
 from PIL import Image, PngImagePlugin, ImageDraw
 import glob
 import os
+import sys
 
 #TODO: pick tiles (get tile info using a stronger prefix system) with a hierarchy ie if a fragment force both lane to the bottom one then there exist at least
 #    one fragment of equal size that connect every part which can be swapped with the previous one
@@ -49,6 +50,11 @@ style = [
     ("CF", (12, 15, 14)),
     ("BD", (-39, -29, -31))
     ]
+
+MODE = "KOTH"
+if len(sys.argv) > 1:
+    if sys.argv[1] == "CP":
+        MODE = "CP"
 
 flat_distance_threshold = 49  # assume average segment length is 20
 not_flat_distance_threshold = 130
@@ -144,6 +150,8 @@ class PointFragment(Fragment):
         self._image = None
         if file_name[1] == 'l':
             self.lc = purple  # considered as ls for ceiling crop
+        elif file_name.startswith("spawn"):
+            self.rc = blue
 
 
 class Extension(MapFragment):
@@ -237,6 +245,12 @@ class SegmentList:
                 return i
         return None
 
+    def get_next_non_ext(self, start):
+        for i in range(start, len(self.l)):
+            if not self.l[i].ext:
+                return self.l[i]
+        return None
+
     def push(self, segment, crop_left, crop_right):
         if not self.spawn:
             self.l.append(segment)
@@ -252,12 +266,15 @@ class SegmentList:
         map_image = Image.new('RGBA', (g_width, 300), black)
         it = iter(self.l)
         i = next(it)  # spawn
+        y = 0
         map_image.paste(i.f.image, (0, 0))
         cr = blue
         try:
             while True:
                 # the position of the previous "door dot", spawn are always short on top
                 height_anchor = pixel_height_in_column(map_image, i.x + i.f.image.width - 1, cr, start_y=i.y)
+                #if not height_anchor:
+                #    height_anchor = i.y + delta
                 i.door_dot.append(height_anchor)
                 i = next(it)
                 if i.reversed:
@@ -266,14 +283,49 @@ class SegmentList:
                     cl, cr = i.f.lc, i.f.rc
                 im = i.get_image()
                 delta = pixel_height_in_column(im, 0, cl)  # the position of the current "door dot" to be matched with the previous on
+                #if not delta:
+                #    delta = height_anchor - y
                 i.door_dot.append(height_anchor)
-                y = height_anchor - delta
+                try:
+                    y = height_anchor - delta
+                except TypeError:
+                    pass
                 i.y = y
                 map_image.paste(im, (i.x, y))
                 i.crop(map_image)
+                #map_image.show()
         except StopIteration:
             pass
         return map_image
+
+    def insert_at(self, segment, index, crop_left, crop_right):
+        #TODO: support crop from left to right?
+        if index >= len(self.l):
+            self.push(segment, crop_left, crop_right)
+            return segment.f.image.width
+        else:
+            next_s = self.get_next_non_ext(index)
+            if next_s:
+                if next_s.crop_s:
+                    if crop_left:
+                        segment.crop_s = next_s.crop_s
+                    if crop_right:
+                        next_s.crop_s = segment
+                    else:
+                        next_s.crop_s = None
+            current = self.l[index]
+            segment.x = current.x
+            if segment.reversed:
+                if segment.f.rc == purple:
+                    segment.remove_ceil = current.remove_ceil
+            else:
+                if segment.f.lc == purple:
+                    segment.remove_ceil = current.remove_ceil
+            self.l.insert(index, segment)
+            dx = segment.f.image.width
+            for i in range(index + 1, len(self.l)):  # adjust position of next segments
+                self.l[i].x += dx
+            return dx
 
     def remove_ceiling(self, map_image, ceiling_height):
         for i in self.l:
@@ -299,7 +351,10 @@ class SegmentList:
                             r = map_image.width - 1
                 else:
                     #if i.door_dot[1]:
-                    bot = max(i.door_dot)
+                    try:
+                        bot = max(i.door_dot)
+                    except TypeError:
+                        pass
                     #else:
                     #    bot = i.door_dot[0]
                     l = i.x
@@ -325,12 +380,12 @@ def find_pixel_in_box(image, x0, y0, x1, y1, color):
     return None, None
 
 
-def find_cap_zone(image, x0, y0 , x1, y1):
+def find_cap_zone(image, x0, y0, x1, y1):
     get = image.getpixel
     for y in range(y0, y1 + 1):
         for x in range(x0, x1 + 1):
             if get((x, y))[:3] == pgrey:
-                for yp in range(y, y1 + 1):
+                for yp in range(y + 1, y1 + 1):
                     if get((x, yp))[:3] == pgrey:
                         if get((x, y))[3] == 200:
                             image.putpixel((x, y), air_wall)
@@ -416,11 +471,11 @@ def add_bg(map_image, bg_file_name, sw):
     else:
         b.paste(im, ((w - 2*sw - bw)//2 + sw, 0))
     b.alpha_composite(map_image)
-    #b.show()
+    b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 2887880279
+#seed = 2616120025
 #seed = 2887880279  # flat
 random.seed(seed)
 print(seed)
@@ -460,13 +515,16 @@ connected_counter = 1
 door_position = []  # list of door location
 remove_ceiling = False
 segment_list = SegmentList()
-segment_list.push(Segment(spawn, False, 0, False), False, False)
+segment_list.push(Segment(spawn, False, 0, False, extension=True), False, False)
 #map_seg = [Segment(spawn, False, 0)]
 
 previous_width = 0
 previous_anchor = 0
 
-l = sslist + lslist
+if MODE == "KOTH":
+    l = sslist + lslist
+else:
+    l = [ls_ext]
 
 while global_width < 250 and l:
     extend = None
@@ -571,7 +629,25 @@ while global_width < 250 and l:
     panic_counter = 0
     remove_ceiling = next_remove_ceiling
 
-#add the point
+#add the points
+idx = 3
+if MODE == "CP":
+    if segment_list.l[idx].x < 80:
+        idx = 4
+    s = segment_list.l[idx]
+    if s.reversed:
+        if s.f.rc == blue:
+            s = random.choice(spointlist)
+        else:
+            s = random.choice(lpointlist)
+    else:
+        if s.f.lc == blue:
+            s = random.choice(spointlist)
+        else:
+            s = random.choice(lpointlist)
+    global_width += segment_list.insert_at(Segment(s, False, global_width, False), idx, False, False)
+    global_width += segment_list.insert_at(Segment(s, True, global_width, False), idx + 1, False, False)
+
 extend = None
 if short_top:
     s = random.choice(spointlist)
@@ -606,15 +682,23 @@ if miny < 20:
 cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
 global_height = cropddraft.height
 
-#get capture point here and turn pixel locators white
+#get capture point
+if MODE == "CP":
+    cppx, ctpy, cbpy = find_cap_zone(cropddraft, segment_list.l[idx].x + 1, 0, segment_list.l[idx + 1].x - 1, global_height - 1)
+    rx = 2*segment_list.l[idx + 1].x - cppx - 1
+    v = cropddraft.getpixel((cppx, ctpy))
+    cropddraft.putpixel((rx, ctpy), v)
+    v = cropddraft.getpixel((cppx, cbpy))
+    cropddraft.putpixel((rx, cbpy), v)
 toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
+print(toppx, toppy, botpy, global_width)
 
 #final layout, add mirrored half
 koth = koth.crop((0, 0, 2*global_width, global_height))
 koth.paste(cropddraft, (0, 0))
 koth.paste(cropddraft.transpose(Image.FLIP_LEFT_RIGHT), (global_width, 0))
 
-#red entities
+#red spawn entities
 spawn_width = spawn.image.width
 entities = '{ENTITIES}' + chr(10) + '[' + '{background:ffffff,type:meta,void:000000}'
 spawnx, spawny = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, gold)
@@ -625,10 +709,19 @@ cabx, caby = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, r
 entities += ',{' + 'type:medCabinet,x:{},y:{}'.format(cabx*6 + 6, caby*6-48) + '}'
 entities += ',{' + 'type:spawnroom,x:0,xscale:{:.2f},y:0,yscale:{:2f}'.format((spawn_width-2)/7, (global_height - 1)/7) + '}'
 entities += ',{' + 'type:redteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((spawn_width-2)*6, global_height/10) + '}'
-#koth entities
-entities += ',{' + 'type:KothControlPoint,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
-entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
-global_width *= 2
+#entities
+if MODE == "CP":
+    entities += ',{' + 'type:controlPoint1,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
+    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+    entities += ',{' + 'type:controlPoint2,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
+    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
+    global_width *= 2
+    entities += ',{' + 'type:controlPoint3,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
+    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+else:
+    entities += ',{' + 'type:KothControlPoint,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
+    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
+    global_width *= 2
 entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6, spawny*6-32) + '}'
 entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 36, spawny*6-32) + '}'
 entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 72, spawny*6-32) + '}'
@@ -695,7 +788,10 @@ koth = add_bg(koth, selected_style[0], spawn_width)
 metadata = PngImagePlugin.PngInfo()
 metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
 os.chdir(os.getcwd()[:-13]+"/Maps")
-mapname = "koth_random_{}.png".format(seed)
+prefix = "koth"
+if MODE == "CP":
+    prefix = "cp"
+mapname = "{}_random_{}.png".format(prefix, seed)
 koth = koth.convert('RGB')
 #koth.show()
 koth.save(mapname, "png", optimize=True, pnginfo=metadata)
