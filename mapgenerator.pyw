@@ -44,11 +44,16 @@ air_air = (255, 255, 255, 0)
 style = [
     ("CS", (27, 33, 25)),
     ("IN", (-36, -24, -30)),
-    ("MN", (-26, -32, -29)),
+    ("MN", (-28, -33, -30)),
     ("SC", (12, 14, 6)),
     ("CF", (12, 15, 14)),
     ("BD", (-39, -29, -31))
     ]
+
+flat_distance_threshold = 49  # assume average segment length is 20
+not_flat_distance_threshold = 130
+flat_saviors = []
+panic_threshold = 9
 
 spawnlist = []
 lpointlist = []
@@ -113,7 +118,7 @@ class MapFragment(Fragment):
         if connexion_type == 's':
             self.path_split = 1
         elif connexion_type == 'o':
-            #self.path_split = -1
+            self.path_split = -1
             self.one_way = True
         elif connexion_type == 'c':
             self.path_split = 0
@@ -127,6 +132,9 @@ class MapFragment(Fragment):
             self.right_removable = True
         if file_name[6] == 'f':
             self.flat = True
+        else:
+            if self.lc != self.rc:
+                flat_saviors.append(self)
 
 
 class PointFragment(Fragment):
@@ -408,11 +416,12 @@ def add_bg(map_image, bg_file_name, sw):
     else:
         b.paste(im, ((w - 2*sw - bw)//2 + sw, 0))
     b.alpha_composite(map_image)
-    b.show()
+    #b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 1295840162
+#seed = 2887880279
+#seed = 2887880279  # flat
 random.seed(seed)
 print(seed)
 os.chdir(os.getcwd() + "/RMG_resource")
@@ -446,7 +455,8 @@ global_width = spawn.image.width
 short_top = True    # all spawns are ss connected
 panic_counter = 0  # prevent picking too many times undesired segments
 long_counter = 0
-connected_counter = 0
+flat_counter = 0
+connected_counter = 1
 door_position = []  # list of door location
 remove_ceiling = False
 segment_list = SegmentList()
@@ -462,24 +472,49 @@ while global_width < 250 and l:
     extend = None
     flip = False
     s = random.choice(l)
+    prev_c_count = connected_counter
     prev_remove_ceil = remove_ceiling  # used for extension
     next_remove_ceiling = remove_ceiling
     # pick a piece, check if it fits the desired sequence, if not remove it from the pool
-    if s.path_split >= 0:  # not split
+    if s.path_split > 0:  # not split
         connected_counter += s.path_split
-        if panic_counter < 4 and 3 < connected_counter:
+        if panic_counter < panic_threshold and 2 <= connected_counter:
+            print("not split pop")
             l.remove(s)
             panic_counter += 1
             continue
-    else:
+    elif s.path_split < 0:
         if connected_counter > 0:
             connected_counter = 0
         else:
             connected_counter += s.path_split
-            if panic_counter < 4 and connected_counter < -2:
+            if panic_counter < panic_threshold and connected_counter <= -3:
+                print("split pop")
                 l.remove(s)
                 panic_counter += 1
                 continue
+    if s.flat:
+        if flat_counter <= 0:
+            flat_counter = global_width - 1
+        if panic_counter >= panic_threshold:  # prevent map from being too flat by forcing a segment
+            s = MapFragment(random.choice(flat_saviors))
+            flat_counter = 0
+            print("too flat savior")
+        elif flat_distance_threshold <= global_width - flat_counter:
+            print("too flat pop")
+            l.remove(s)
+            panic_counter += 1
+            connected_counter = prev_c_count
+            continue
+    else:
+        if flat_counter >= 0:
+            flat_counter = -global_width + 1
+        if panic_counter < panic_threshold//2 and global_width + flat_counter >= not_flat_distance_threshold:
+            print("not flat pop")
+            l.remove(s)
+            panic_counter += 1
+            connected_counter = prev_c_count
+            continue
     if short_top:
         if s.lc == s.rc:  #ss
             if not s.flip_locked and random.randint(0, 1) == 1:
