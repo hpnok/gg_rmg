@@ -40,13 +40,14 @@ fgrey = (130, 145, 160, 255)
 air_wall = (56, 74, 188, 200)
 air_air = (255, 255, 255, 0)
 
+#TODO: use style to remove ceiling or not?
 style = [
-    ("CS", (7, 11, 7)),
-    ("IN", (-34, -25, -29)),
-    ("MN", (-23, -26, -28)),
-    ("SC", (1, 8, 12)),
+    ("CS", (27, 33, 25)),
+    ("IN", (-36, -24, -30)),
+    ("MN", (-26, -32, -29)),
+    ("SC", (12, 14, 6)),
     ("CF", (12, 15, 14)),
-    ("BD", (-34, -27, -27))
+    ("BD", (-39, -29, -31))
     ]
 
 spawnlist = []
@@ -65,7 +66,7 @@ class Fragment:
         self.unique = False  # 1
         self.flip_locked = False  # 2
 
-        self.path_split = 1  # 3  # TODO:-1 , 0, +1 modulate the value of connected counter, 0 allow excluding small connecting pieces
+        self.path_split = -1  # 3  # TODO:-1 , 0, +1 modulate the value of connected counter, 0 allow excluding small connecting pieces
         self.one_way = False  # 3
 
         self.left_removable = False  # 4
@@ -110,9 +111,9 @@ class MapFragment(Fragment):
             self.flip_locked = True
         connexion_type = file_name[4]
         if connexion_type == 's':
-            self.path_split = -1
+            self.path_split = 1
         elif connexion_type == 'o':
-            self.path_split = -1
+            #self.path_split = -1
             self.one_way = True
         elif connexion_type == 'c':
             self.path_split = 0
@@ -134,7 +135,7 @@ class PointFragment(Fragment):
         self.name = file_name
         self._image = None
         if file_name[1] == 'l':
-            self.lc = purple
+            self.lc = purple  # considered as ls for ceiling crop
 
 
 class Extension(MapFragment):
@@ -147,13 +148,15 @@ class Extension(MapFragment):
 
 
 class Segment:
-    def __init__(self, fragment, reverse, x, extension=None):
+    def __init__(self, fragment, reverse, x, remove_ceiling, extension=None):
         self.f = fragment
         self.ext = extension
         self.reversed = reverse
         self.x = x
         self.y = 0
         self.crop_s = None
+        self.door_dot = []  # left and right position of the door dot on the image
+        self.remove_ceil = remove_ceiling
 
     def get_image(self):
         if self.reversed:
@@ -211,6 +214,7 @@ class Segment:
                         map_image.putpixel((dx + 1, y1 + 1), door_orange)
         except:
             print("crop error", seed)
+            raise IndexError
 
 
 class SegmentList:
@@ -221,7 +225,7 @@ class SegmentList:
 
     def get_prev_non_ext(self):
         for i in reversed(self.l):
-            if not i.reversed:
+            if not i.ext:
                 return i
         return None
 
@@ -232,10 +236,7 @@ class SegmentList:
         else:
             if not segment.ext:
                 if self.previous_crop and crop_left:
-                    if self.l[-1].ext:
-                        segment.crop_s = self.l[-2]
-                    else:
-                        segment.crop_s = self.l[-1]
+                    segment.crop_s = self.get_prev_non_ext()
                 self.previous_crop = crop_right
             self.l.append(segment)
 
@@ -249,6 +250,7 @@ class SegmentList:
             while True:
                 # the position of the previous "door dot", spawn are always short on top
                 height_anchor = pixel_height_in_column(map_image, i.x + i.f.image.width - 1, cr, start_y=i.y)
+                i.door_dot.append(height_anchor)
                 i = next(it)
                 if i.reversed:
                     cl, cr = i.f.rc, i.f.lc
@@ -256,6 +258,7 @@ class SegmentList:
                     cl, cr = i.f.lc, i.f.rc
                 im = i.get_image()
                 delta = pixel_height_in_column(im, 0, cl)  # the position of the current "door dot" to be matched with the previous on
+                i.door_dot.append(height_anchor)
                 y = height_anchor - delta
                 i.y = y
                 map_image.paste(im, (i.x, y))
@@ -263,6 +266,38 @@ class SegmentList:
         except StopIteration:
             pass
         return map_image
+
+    def remove_ceiling(self, map_image, ceiling_height):
+        for i in self.l:
+            if i.remove_ceil:
+                if i.f.lc != i.f.rc:  #ls
+                    get = map_image.getpixel
+                    if i.reversed:  #sl
+                        r = i.x + i.f.image.width - 1
+                        bot = i.door_dot[1]
+                        l = r
+                        for l in range(r - 1, i.x, -1):
+                            if get((l, bot)) == purple:
+                                break
+                    else:
+                        l = i.x
+                        bot = i.door_dot[0]
+                        r = None
+                        for x in range(l + 1, i.x + i.f.image.width - 1):
+                            if get((x, bot)) == purple:
+                                r = x
+                                break
+                        if not r:
+                            r = map_image.width - 1
+                else:
+                    #if i.door_dot[1]:
+                    bot = max(i.door_dot)
+                    #else:
+                    #    bot = i.door_dot[0]
+                    l = i.x
+                    r = l + i.f.image.width - 1
+                draw = ImageDraw.Draw(map_image)
+                draw.rectangle(((l, 0), (r, bot)), fill=air_air)
 
 
 def pixel_height_in_column(image, x, color, start_y=0):
@@ -318,52 +353,6 @@ def findFirstNonSolid(image):
             return xp, yp
 
 
-"""def crop_bot_path(map_image, double_check_left, double_check_right, left_x0, left_y0, right_x0, right_y0, left_height, right_height):
-    get = map_image.getpixel
-    try:
-        if double_check_left:
-            lx1, top1 = find_pixel_in_box(map_image, left_x0 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, crp_px)
-            lx2, top2 = find_pixel_in_box(map_image, lx1 + 1, left_y0 + 1, right_x0 - 1, left_y0 + left_height, crp_px)
-            if lx2 is None:
-                lx, ltop = lx1, top1
-            else:
-                lx, ltop = lx2, top2
-        else:
-            lx, ltop = find_pixel_in_box(map_image, left_x0, left_y0, right_x0, left_y0 + left_height, crp_px)
-        lbot = pixel_height_in_column(map_image, lx, crp_px, start_y=ltop + 1)
-        if double_check_right:
-            rx1, top1 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, map_image.width - 1, right_y0 + right_height, crp_px)
-            rx2, top2 = find_pixel_in_box(map_image, right_x0 + 1, right_y0 + 1, rx1 - 1, right_y0 + right_height, crp_px)
-            if rx2 is None:
-                rx, rtop = rx1, top1
-            else:
-                rx, rtop = rx2, top2
-        else:
-            rx, rtop = find_pixel_in_box(map_image, right_x0, right_y0, map_image.width - 1, right_y0 + right_height, crp_px)
-        rbot = pixel_height_in_column(map_image, rx, crp_px, start_y=rtop + 1)
-        y0 = max(ltop, rtop)
-        y1 = min(lbot, rbot)
-        if y1 - y0 > 6:
-            draw = ImageDraw.Draw(map_image)
-            draw.rectangle(((lx, y0), (rx, y1)), fill=air_wall)
-            for dx in door_position:  # add nice dot to show fragment slice
-                if dx < lx:
-                    continue
-                if get((dx, y0 - 1)) == black:
-                    map_image.putpixel((dx, y0 - 1), door_yellow)
-                if get((dx + 1, y0 - 1)) == black:
-                    map_image.putpixel((dx + 1, y0 - 1), door_yellow)
-                if get((dx, y1 + 1)) == black:
-                    map_image.putpixel((dx, y1 + 1), door_orange)
-                if get((dx + 1, y1 + 1)) == black:
-                    map_image.putpixel((dx + 1, y1 + 1), door_orange)
-                if dx >= rx:
-                    break
-    except:
-        print("crop error", seed)
-"""
-
-
 def get_walk_mask(map_image):
     # walkmask compression algorithm from gg2 source adapted to simply convert white to non solid
     # bottom left pixel must be white for the decoder
@@ -411,19 +400,19 @@ def add_bg(map_image, bg_file_name, sw):
     w, h = map_image.size
     b = Image.new('RGBA', (w, h), im.getpixel((0, bh - 1)))
     if bw < w - 2*sw:
-        x = 0
-        while x < w:
+        x = sw
+        while x < w - 2*sw:
             b.paste(im, (x, 0))
             x += bw
         bw = w - 2*sw
     else:
-        b.paste(im, ((w - 2*sw - bw)//2, 0))
+        b.paste(im, ((w - 2*sw - bw)//2 + sw, 0))
     b.alpha_composite(map_image)
     b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 4204531326
+#seed = 1295840162
 random.seed(seed)
 print(seed)
 os.chdir(os.getcwd() + "/RMG_resource")
@@ -459,8 +448,9 @@ panic_counter = 0  # prevent picking too many times undesired segments
 long_counter = 0
 connected_counter = 0
 door_position = []  # list of door location
+remove_ceiling = False
 segment_list = SegmentList()
-segment_list.push(Segment(spawn, False, 0), False, False)
+segment_list.push(Segment(spawn, False, 0, False), False, False)
 #map_seg = [Segment(spawn, False, 0)]
 
 previous_width = 0
@@ -472,10 +462,12 @@ while global_width < 250 and l:
     extend = None
     flip = False
     s = random.choice(l)
+    prev_remove_ceil = remove_ceiling  # used for extension
+    next_remove_ceiling = remove_ceiling
     # pick a piece, check if it fits the desired sequence, if not remove it from the pool
     if s.path_split >= 0:  # not split
         connected_counter += s.path_split
-        if panic_counter < 3 < connected_counter:
+        if panic_counter < 4 and 3 < connected_counter:
             l.remove(s)
             panic_counter += 1
             continue
@@ -484,7 +476,7 @@ while global_width < 250 and l:
             connected_counter = 0
         else:
             connected_counter += s.path_split
-            if panic_counter < 3 and connected_counter < -2:
+            if panic_counter < 4 and connected_counter < -2:
                 l.remove(s)
                 panic_counter += 1
                 continue
@@ -497,6 +489,9 @@ while global_width < 250 and l:
         elif s.lc == purple and not s.flip_locked:  #ls
             short_top = False
             flip = True
+            if 75 > random.randint(0, 99):
+                remove_ceiling = True
+                next_remove_ceiling = True
             long_counter += 1
             if s.unique:
                 lslist.remove(s)
@@ -514,6 +509,7 @@ while global_width < 250 and l:
                 lllist.remove(s)
         else:  #ls
             short_top = True
+            next_remove_ceiling = False
             if s.unique:
                 lslist.remove(s)
         if (ll_ext.odd + 10*connected_counter) > random.randint(0, 99):
@@ -522,7 +518,7 @@ while global_width < 250 and l:
 
     if extend:
         door_position.append(global_width - 1)
-        segment_list.push(Segment(extend, False, global_width, extension=True), False, False)
+        segment_list.push(Segment(extend, False, global_width, prev_remove_ceil, extension=True), False, False)
         global_width += extend.length
 
     door_position.append(global_width - 1)
@@ -530,7 +526,7 @@ while global_width < 250 and l:
         cl, cr = s.right_removable, s.left_removable
     else:
         cl, cr = s.left_removable, s.right_removable
-    segment_list.push(Segment(s, flip, global_width), cl, cr)
+    segment_list.push(Segment(s, flip, global_width, remove_ceiling, extension=s.name.startswith("ee")), cl, cr)
     global_width += s.image.width
 
     if short_top:
@@ -538,6 +534,7 @@ while global_width < 250 and l:
     else:
         l = lllist + lslist
     panic_counter = 0
+    remove_ceiling = next_remove_ceiling
 
 #add the point
 extend = None
@@ -552,11 +549,11 @@ else:
 
 if extend:
     door_position.append(global_width - 1)
-    segment_list.push(Segment(extend, False, global_width, extension=True), False, False)
+    segment_list.push(Segment(extend, False, global_width, remove_ceiling, extension=True), False, False)
     global_width += extend.length
 
 door_position.append(global_width - 1)
-segment_list.push(Segment(s, False, global_width), False, False)
+segment_list.push(Segment(s, False, global_width, remove_ceiling), False, False)
 global_width += s.image.width
 
 koth = segment_list.build_map(global_width)
@@ -566,8 +563,9 @@ maxx, maxy = findFirstNonSolid(koth)
 reverseddraft = koth.transpose(Image.FLIP_TOP_BOTTOM)
 reverseddraft.putpixel((0, 0), black)
 minx, miny = findFirstNonSolid(reverseddraft)
-if maxy < 5:
-    maxy = 5
+segment_list.remove_ceiling(koth, maxy)
+if maxy < 10:
+    maxy = 10
 if miny < 20:
     miny = 20
 cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
@@ -618,26 +616,27 @@ koth.paste(door, (global_width - spawn_width - 1, dh))
 # imageops.colorize needs type L (black/white) images
 # randomgreys
 selected_style = random.choice(style)
-rsgrey = (random.randrange(146, 154) + selected_style[1][0]//2,
-          random.randrange(140, 148) + selected_style[1][1]//2,
-          random.randrange(135, 145) + selected_style[1][2]//2, 255)
-rgrey = (random.randrange(152, 163) + selected_style[1][0],
-         random.randrange(152, 163) + selected_style[1][0],
-         random.randrange(152, 163) + selected_style[1][0], 255)
+rsgrey = (random.randrange(176, 183) + selected_style[1][0]//2,
+          random.randrange(174, 179) + selected_style[1][1]//2,
+          random.randrange(167, 175) + selected_style[1][2]//2, 255)
+rgrey = (random.randrange(154, 160) + selected_style[1][0],
+         random.randrange(154, 160) + selected_style[1][1],
+         random.randrange(154, 160) + selected_style[1][2], 255)
 (rgr, rgg, rgb, rgs) = rgrey
-bsgrey = (random.randrange(134, 142) + selected_style[1][0]//2,
-          random.randrange(142, 147) + selected_style[1][1]//2,
-          random.randrange(146, 150) + selected_style[1][2]//2, 255)
+bsgrey = (random.randrange(177, 184) + selected_style[1][0]//2,
+          random.randrange(185, 189) + selected_style[1][1]//2,
+          random.randrange(186, 190) + selected_style[1][2]//2, 255)
 get = koth.getpixel
 put = koth.putpixel
 for y in range(1, global_height-1):
     for x in range(1, spawn_width - 1):
         if get((x, y))[3] == 200:
-            put((x, y), rsgrey)
-            put((global_width - x - 1, y), bsgrey)
             if spawny - 7 < y < spawny - 3:    # 139 < y < 143
-                put((x, y), (167, 99, 97, 255))
-                put((global_width - x - 1, y), (97, 129, 167, 255))
+                put((x, y), (175, 99, 97, 255))
+                put((global_width - x - 1, y), (97, 129, 176, 255))
+            else:
+                put((x, y), rsgrey)
+                put((global_width - x - 1, y), bsgrey)
     for x in range(spawn_width + 1, global_width//2):
         if get((x, y))[3] == 200:
             if y < 4:
