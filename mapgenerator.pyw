@@ -6,20 +6,12 @@ import sys
 
 #TODO: pick tiles (get tile info using a stronger prefix system) with a hierarchy ie if a fragment force both lane to the bottom one then there exist at least
 #    one fragment of equal size that connect every part which can be swapped with the previous one
-#    do checks like: if ll for x distance and all the ll segments are flat then add a palissade?(ll7.png) in the range
-#    too many flat ss
-#    too many cross/pit segments
-#    air (transparent = (0, 0, 0, 0)
-#    air solid bg = (255, 255, 255, 0) on blit with add flag solid parts becomes white (255, 255, 255, 255) while transparent takes the color of the bg
 #    possibility to add a crate in a ll junction?
 #    ll11 - ll13, ls8-ls14
 #    if 2 section repeat or mirror repeat add at least one extension
 #    flags: reusable, repeatable, (down/up)slope or (low/high/both/none)flat, allconnected/split/directiondependant,
 #TODO: use other color to mark ceiling (remove them to have a "open" map)
 #TODO: have 1 oe 2 random color to remove/add some part of the map
-#TODO: 3cp
-#TODO: use argv to change map generation variables
-#https://www.saltycrane.com/blog/2007/12/how-to-pass-command-line-arguments-to/
 #what prevents a map from being taller then 300 pixels?
 
 #colours used to identify connecting nodes and locators
@@ -43,12 +35,12 @@ air_air = (255, 255, 255, 0)
 
 #TODO: use style to remove ceiling or not?
 style = [
-    ("CS", (27, 33, 25)),
-    ("IN", (-36, -24, -30)),
-    ("MN", (-28, -33, -30)),
-    ("SC", (12, 14, 6)),
-    ("CF", (12, 15, 14)),
-    ("BD", (-39, -29, -31))
+    ("CS", (28, 34, 22)),
+    ("IN", (-45, -38, -50)),
+    ("MN", (-28, -33, -34)),
+    ("SC", (22, 23, 11)),
+    ("CF", (4, 10, 6)),
+    ("BD", (-44, -34, -36))
     ]
 
 MODE = "KOTH"
@@ -102,7 +94,7 @@ class Fragment:
         self.load()
         return self._image
 
-
+#TODO: special ss fragment for cp points (ss or ll)
 class MapFragment(Fragment):
     def __init__(self, file_name):
         super().__init__(file_name)
@@ -220,7 +212,8 @@ class Segment:
             if y1 - y0 > 6:
                 draw = ImageDraw.Draw(map_image)
                 draw.rectangle(((lx, y0), (rx, y1)), fill=air_wall)
-                for dx in door_position:  # add nice dot to show fragment slice
+                for f in segment_list.l:  # add nice dot to show fragment slice
+                    dx = f.x - 1
                     if dx < lx:
                         continue
                     if dx >= rx:
@@ -364,9 +357,8 @@ class SegmentList:
                     #    bot = i.door_dot[0]
                     l = i.x
                     r = l + i.f.image.width - 1
-                print(l, r)
                 draw = ImageDraw.Draw(map_image)
-                draw.rectangle(((l, 0), (r, bot)), fill=air_air)
+                draw.rectangle(((l, ceiling_height), (r, bot)), fill=air_air)
 
 
 def pixel_height_in_column(image, x, color, start_y=0):
@@ -398,9 +390,9 @@ def find_cap_zone(image, x0, y0, x1, y1):
                         else:
                             image.putpixel((x, y), air_air)
                         if get((x, yp))[3] == 200:
-                            image.putpixel((x, y), air_wall)
+                            image.putpixel((x, yp), air_wall)
                         else:
-                            image.putpixel((x, y), air_air)
+                            image.putpixel((x, yp), air_air)
                         return x, y, yp
                 return x, y, y1 + 1
     return None, None, None
@@ -477,11 +469,11 @@ def add_bg(map_image, bg_file_name, sw):
     else:
         b.paste(im, ((w - 2*sw - bw)//2 + sw, 0))
     b.alpha_composite(map_image)
-    #b.show()
+    b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 2777927642
+#seed = 3239445057
 #seed = 2887880279  # flat
 random.seed(seed)
 print(seed)
@@ -500,9 +492,9 @@ for file in glob.glob('*.png'):
     elif file.startswith("ls"):
         lslist.append(MapFragment(file))
 
-ss_ext = Extension("ee--c-f1.png", 40, blue, blue)
+ss_ext = Extension("ee--c-f1.png", 35, blue, blue)
 sslist.append(ss_ext)  # an extension is still a valid segment
-ll_ext = Extension("ee--c-f2.png", 35, purple, purple)
+ll_ext = Extension("ee--c-f2.png", 30, purple, purple)
 lllist.append(ll_ext)
 ls_ext = Extension("ee--c-f3.png", 30, purple, blue)
 lslist.append(ls_ext)
@@ -685,14 +677,14 @@ reverseddraft = koth.transpose(Image.FLIP_TOP_BOTTOM)
 reverseddraft.putpixel((0, 0), black)
 minx, miny = findFirstNonSolid(reverseddraft)
 try:
-    segment_list.remove_ceiling(koth, maxy)
+    segment_list.remove_ceiling(koth, maxy - 8)
 except AttributeError:
     pass
-if maxy < 10:
-    maxy = 10
+if maxy < 8:
+    maxy = 8
 if miny < 20:
     miny = 20
-cropddraft = koth.crop((0, maxy - 5, global_width, 300 - miny + 20))
+cropddraft = koth.crop((0, maxy - 8, global_width, 300 - miny + 20))
 global_height = cropddraft.height
 
 #get capture point
@@ -766,16 +758,22 @@ selected_style = random.choice(style)
 rsgrey = (random.randrange(176, 183) + selected_style[1][0]//2,
           random.randrange(174, 179) + selected_style[1][1]//2,
           random.randrange(167, 175) + selected_style[1][2]//2, 255)
-rgrey = (random.randrange(154, 160) + selected_style[1][0],
-         random.randrange(154, 160) + selected_style[1][1],
-         random.randrange(154, 160) + selected_style[1][2], 255)
+rgrey = (random.randrange(144, 149) + selected_style[1][0],
+         random.randrange(144, 149) + selected_style[1][1],
+         random.randrange(144, 149) + selected_style[1][2], 255)
 (rgr, rgg, rgb, rgs) = rgrey
 bsgrey = (random.randrange(177, 184) + selected_style[1][0]//2,
           random.randrange(185, 189) + selected_style[1][1]//2,
           random.randrange(186, 190) + selected_style[1][2]//2, 255)
 get = koth.getpixel
 put = koth.putpixel
-for y in range(1, global_height-1):
+for y in range(8, global_height-17):
+    if y == 17:
+        rgrey = (rgr + 4, rgg + 4, rgb + 4, 255)
+    if y == 32:
+        rgrey = (rgr + 7, rgg + 7, rgb + 7, 255)
+    elif y == 50:
+        rgrey = (rgr + 10, rgg + 10, rgb + 10, 255)
     for x in range(1, spawn_width - 1):
         if get((x, y))[3] == 200:
             if spawny - 7 < y < spawny - 3:    # 139 < y < 143
@@ -786,18 +784,8 @@ for y in range(1, global_height-1):
                 put((global_width - x - 1, y), bsgrey)
     for x in range(spawn_width + 1, global_width//2):
         if get((x, y))[3] == 200:
-            if y < 4:
-                put((x, y), ((rgr - 10), (rgg - 10), (rgb - 10), 255))
-                put((global_width - x - 1, y), ((rgr - 10), (rgg - 10), (rgb - 10), 255))
-            elif y < 21:
-                put((x, y), ((rgr - 6), (rgg - 6), (rgb - 6), 255))
-                put((global_width - x - 1, y), ((rgr - 6), (rgg - 6), (rgb - 6), 255))
-            elif y < 39:
-                put((x, y), ((rgr - 3), (rgg - 3), (rgb - 3), 255))
-                put((global_width - x - 1, y), ((rgr - 3), (rgg - 3), (rgb - 3), 255))
-            else:
-                put((x, y), rgrey)
-                put((global_width - x - 1, y), rgrey)
+            put((x, y), rgrey)
+            put((global_width - x - 1, y), rgrey)
         elif get((x, y)) == oj:  # ground around point
             if (x + y) % 3 != 0:
                 put((x, y), black)
