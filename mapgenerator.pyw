@@ -469,7 +469,7 @@ def add_bg(map_image, bg_file_name, sw):
     else:
         b.paste(im, ((w - 2*sw - bw)//2 + sw, 0))
     b.alpha_composite(map_image)
-    b.show()
+    #b.show()
     return b
 
 seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
@@ -551,9 +551,9 @@ while global_width < length_max and l:
                 continue
     if s.flat:
         if flat_counter <= 0:
-            flat_counter = global_width - 1
+            flat_counter = global_width - 1  # using global width factor in extensions too
         if panic_counter >= panic_threshold:  # prevent map from being too flat by forcing a segment
-            s = MapFragment(random.choice(flat_saviors))
+            s = MapFragment(random.choice(flat_saviors))  # a ls frag which isn't flat
             flat_counter = 0
             print("too flat savior")
         elif flat_distance_threshold <= global_width - flat_counter:
