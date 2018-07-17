@@ -8,3 +8,5 @@ setup(
     options = {'py2exe': {'bundle_files': 1, 'compressed': True}},
     zipfile = None,
 )
+
+#>python setup.py py2exe

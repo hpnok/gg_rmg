@@ -94,6 +94,7 @@ class Fragment:
         self.load()
         return self._image
 
+
 #TODO: special ss fragment for cp points (ss or ll)
 class MapFragment(Fragment):
     def __init__(self, file_name):
@@ -227,8 +228,7 @@ class Segment:
                     if get((dx + 1, y1 + 1)) == black:
                         map_image.putpixel((dx + 1, y1 + 1), door_orange)
         except:
-            print("crop error", seed)
-            raise IndexError
+            raise IndexError("crop error" + str(seed))
 
 
 class SegmentList:
