@@ -4,6 +4,7 @@ import glob
 import os
 import sys
 
+
 #TODO: pick tiles (get tile info using a stronger prefix system) with a hierarchy ie if a fragment force both lane to the bottom one then there exist at least
 #    one fragment of equal size that connect every part which can be swapped with the previous one
 #    possibility to add a crate in a ll junction?
@@ -103,13 +104,13 @@ class MapFragment(Fragment):
 
     def pars_file_name(self, file_name):
         """file name structure:
-           0:p/l left side connection
-           1:p/l right side connection
-           2:u/- unique
-           3:l/- flip locked prevent the fragment from being flipped horizontally
-           4:s/o/c- path is split (not connected) or one way (not all direction are possible) or a connector (small segment)
-           5:l/r/b/- can crop the bottom path on left/right/both side
-           6:f/- flat"""
+        0:p/l left side connection
+        1:p/l right side connection
+        2:u/- unique
+        3:l/- flip locked prevent the fragment from being flipped horizontally
+        4:s/o/c- path is split (not connected) or one way (not all direction are possible) or a connector (small segment)
+        5:l/r/b/- can crop the bottom path on left/right/both side
+        6:f/- flat"""
         if file_name[0] == 'l':
             self.lc = purple
         if file_name[1] == 'l':
@@ -472,335 +473,336 @@ def add_bg(map_image, bg_file_name, sw):
     #b.show()
     return b
 
-seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
-#seed = 3239445057
-#seed = 2887880279  # flat
-random.seed(seed)
-print(seed)
-os.chdir(os.getcwd() + "/RMG_resource")
-for file in glob.glob('*.png'):
-    if file.startswith("spawn"):
-        spawnlist.append(PointFragment(file))
-    elif file.startswith("pl"):
-        lpointlist.append(PointFragment(file))
-    elif file.startswith("ps"):
-        spointlist.append(PointFragment(file))
-    elif file.startswith("ll"):
-        lllist.append(MapFragment(file))
-    elif file.startswith("ss"):
-        sslist.append(MapFragment(file))
-    elif file.startswith("ls"):
-        lslist.append(MapFragment(file))
+if __name__ == "__main__":
+    seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
+    #seed = 3239445057
+    #seed = 2887880279  # flat
+    random.seed(seed)
+    print(seed)
+    os.chdir(os.getcwd() + "/RMG_resource")
+    for file in glob.glob('*.png'):
+        if file.startswith("spawn"):
+            spawnlist.append(PointFragment(file))
+        elif file.startswith("pl"):
+            lpointlist.append(PointFragment(file))
+        elif file.startswith("ps"):
+            spointlist.append(PointFragment(file))
+        elif file.startswith("ll"):
+            lllist.append(MapFragment(file))
+        elif file.startswith("ss"):
+            sslist.append(MapFragment(file))
+        elif file.startswith("ls"):
+            lslist.append(MapFragment(file))
 
-ss_ext = Extension("ee--c-f1.png", 35, blue, blue)
-sslist.append(ss_ext)  # an extension is still a valid segment
-ll_ext = Extension("ee--c-f2.png", 30, purple, purple)
-lllist.append(ll_ext)
-ls_ext = Extension("ee--c-f3.png", 30, purple, blue)
-lslist.append(ls_ext)
+    ss_ext = Extension("ee--c-f1.png", 35, blue, blue)
+    sslist.append(ss_ext)  # an extension is still a valid segment
+    ll_ext = Extension("ee--c-f2.png", 30, purple, purple)
+    lllist.append(ll_ext)
+    ls_ext = Extension("ee--c-f3.png", 30, purple, blue)
+    lslist.append(ls_ext)
 
-spawn = random.choice(spawnlist)
-#segment_list = [spawn]
-#segment = spawn.image
-#koth = Image.new('RGBA', segment.size, black)
-#koth.paste(segment, (0, 0))
-global_width = spawn.image.width
-short_top = True    # all spawns are ss connected
-panic_counter = 0  # prevent picking too many times undesired segments
-long_counter = 0
-flat_counter = 0
-connected_counter = 1
-door_position = []  # list of door location
-remove_ceiling = False
-segment_list = SegmentList()
-segment_list.push(Segment(spawn, False, 0, False, extension=True), False, False)
-#map_seg = [Segment(spawn, False, 0)]
+    spawn = random.choice(spawnlist)
+    #segment_list = [spawn]
+    #segment = spawn.image
+    #koth = Image.new('RGBA', segment.size, black)
+    #koth.paste(segment, (0, 0))
+    global_width = spawn.image.width
+    short_top = True    # all spawns are ss connected
+    panic_counter = 0  # prevent picking too many times undesired segments
+    long_counter = 0
+    flat_counter = 0
+    connected_counter = 1
+    door_position = []  # list of door location
+    remove_ceiling = False
+    segment_list = SegmentList()
+    segment_list.push(Segment(spawn, False, 0, False, extension=True), False, False)
+    #map_seg = [Segment(spawn, False, 0)]
 
-previous_width = 0
-previous_anchor = 0
+    previous_width = 0
+    previous_anchor = 0
 
-if MODE == "KOTH":
-    l = sslist + lslist
-else:
-    l = [ls_ext]
+    if MODE == "KOTH":
+        l = sslist + lslist
+    else:
+        l = [ls_ext]
 
-while global_width < length_max and l:
-    extend = None
-    flip = False
-    s = random.choice(l)
-    prev_c_count = connected_counter
-    prev_remove_ceil = remove_ceiling  # used for extension
-    next_remove_ceiling = remove_ceiling
-    # pick a piece, check if it fits the desired sequence, if not remove it from the pool
-    if s.path_split > 0:  # not split
-        connected_counter += s.path_split
-        if panic_counter < panic_threshold and 2 <= connected_counter:
-            print("not split pop")
-            l.remove(s)
-            panic_counter += 1
-            continue
-    elif s.path_split < 0:
-        if connected_counter > 0:
-            connected_counter = 0
-        else:
+    while global_width < length_max and l:
+        extend = None
+        flip = False
+        s = random.choice(l)
+        prev_c_count = connected_counter
+        prev_remove_ceil = remove_ceiling  # used for extension
+        next_remove_ceiling = remove_ceiling
+        # pick a piece, check if it fits the desired sequence, if not remove it from the pool
+        if s.path_split > 0:  # not split
             connected_counter += s.path_split
-            if panic_counter < panic_threshold and connected_counter <= -3:
-                print("split pop")
+            if panic_counter < panic_threshold and 2 <= connected_counter:
+                print("not split pop")
                 l.remove(s)
                 panic_counter += 1
                 continue
-    if s.flat:
-        if flat_counter <= 0:
-            flat_counter = global_width - 1  # using global width factor in extensions too
-        if panic_counter >= panic_threshold:  # prevent map from being too flat by forcing a segment
-            s = MapFragment(random.choice(flat_saviors))  # a ls frag which isn't flat
-            flat_counter = 0
-            print("too flat savior")
-        elif flat_distance_threshold <= global_width - flat_counter:
-            print("too flat pop")
-            l.remove(s)
-            panic_counter += 1
-            connected_counter = prev_c_count
-            continue
-    else:
-        if flat_counter >= 0:
-            flat_counter = -global_width + 1
-        if panic_counter < panic_threshold//2 and global_width + flat_counter >= not_flat_distance_threshold:
-            print("not flat pop")
-            l.remove(s)
-            panic_counter += 1
-            connected_counter = prev_c_count
-            continue
-    if short_top:
-        if s.lc == s.rc:  #ss
-            if not s.flip_locked and random.randint(0, 1) == 1:
-                flip = True
-            if s.unique:
-                sslist.remove(s)
-        elif s.lc == purple and not s.flip_locked:  #ls
-            short_top = False
-            flip = True
-            if 75 > random.randint(0, 99):
-                remove_ceiling = True
-                next_remove_ceiling = True
-            long_counter += 1
-            if s.unique:
-                lslist.remove(s)
-        else:  # the piece can't be used remove it from the pool
-            l.remove(s)
-            panic_counter += 1
-            continue
-        if (ss_ext.odd + 10*connected_counter) > random.randint(0, 99):
-            extend = ss_ext
-    else:
-        if s.lc == s.rc:  #ll
-            if not s.flip_locked and random.randint(0, 1) == 1:
-                flip = True
-            if s.unique:
-                lllist.remove(s)
-        else:  #ls
-            short_top = True
-            next_remove_ceiling = False
-            if s.unique:
-                lslist.remove(s)
-        if (ll_ext.odd + 10*connected_counter) > random.randint(0, 99):
-            extend = ll_ext
-        long_counter += 1
-
-    if extend:
-        door_position.append(global_width - 1)
-        segment_list.push(Segment(extend, False, global_width, prev_remove_ceil, extension=True), False, False)
-        global_width += extend.length
-
-    door_position.append(global_width - 1)
-    if flip:
-        cl, cr = s.right_removable, s.left_removable
-    else:
-        cl, cr = s.left_removable, s.right_removable
-    segment_list.push(Segment(s, flip, global_width, remove_ceiling, extension=s.name.startswith("ee")), cl, cr)
-    global_width += s.image.width
-
-    if short_top:
-        l = sslist + lslist
-    else:
-        l = lllist + lslist
-    panic_counter = 0
-    remove_ceiling = next_remove_ceiling
-
-#add the points
-idx = 3
-if MODE == "CP" or MODE == "DKOTH":
-    try:
-        while segment_list.l[idx].x - spawn.image.width < 60:
-            idx += 1
-    except IndexError:
-        idx -= 1
-    s = segment_list.l[idx]
-    if s.reversed:
-        if s.f.rc == blue:
-            s = random.choice(spointlist)
-        else:
-            s = random.choice(lpointlist)
-    else:
-        if s.f.lc == blue:
-            s = random.choice(spointlist)
-        else:
-            s = random.choice(lpointlist)
-    global_width += segment_list.insert_at(Segment(s, False, global_width, False), idx, False, False)
-    global_width += segment_list.insert_at(Segment(s, True, global_width, False), idx + 1, False, False)
-
-if MODE != "DKOTH":
-    extend = None
-    if short_top:
-        s = random.choice(spointlist)
-        if ss_ext.odd > random.randint(0, 99):
-            extend = ss_ext
-    else:
-        s = random.choice(lpointlist)
-        if ll_ext.odd > random.randint(0, 99):
-            extend = ll_ext
-
-    if extend:
-        door_position.append(global_width - 1)
-        segment_list.push(Segment(extend, False, global_width, remove_ceiling, extension=True), False, False)
-        global_width += extend.length
-
-    door_position.append(global_width - 1)
-    segment_list.push(Segment(s, False, global_width, remove_ceiling), False, False)
-    global_width += s.image.width
-
-koth = segment_list.build_map(global_width)
-
-#cut black border
-maxx, maxy = findFirstNonSolid(koth)
-reverseddraft = koth.transpose(Image.FLIP_TOP_BOTTOM)
-reverseddraft.putpixel((0, 0), black)
-minx, miny = findFirstNonSolid(reverseddraft)
-try:
-    segment_list.remove_ceiling(koth, maxy - 8)
-except AttributeError:
-    pass
-if maxy < 8:
-    maxy = 8
-if miny < 20:
-    miny = 20
-cropddraft = koth.crop((0, maxy - 8, global_width, 300 - miny + 20))
-global_height = cropddraft.height
-
-#get capture point
-if MODE != "KOTH":
-    cppx, ctpy, cbpy = find_cap_zone(cropddraft, segment_list.l[idx].x + 1, 0, segment_list.l[idx + 1].x - 1, global_height - 1)
-    rx = 2*segment_list.l[idx + 1].x - cppx - 1
-    v = cropddraft.getpixel((cppx, ctpy))
-    cropddraft.putpixel((rx, ctpy), v)
-    v = cropddraft.getpixel((cppx, cbpy))
-    cropddraft.putpixel((rx, cbpy), v)
-if MODE != "DKOTH":
-    toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
-
-#final layout, add mirrored half
-koth = koth.crop((0, 0, 2*global_width, global_height))
-koth.paste(cropddraft, (0, 0))
-koth.paste(cropddraft.transpose(Image.FLIP_LEFT_RIGHT), (global_width, 0))
-
-#red spawn entities
-spawn_width = spawn.image.width
-entities = '{ENTITIES}' + chr(10) + '[' + '{background:ffffff,type:meta,void:000000}'
-spawnx, spawny = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, gold)
-entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6, spawny*6-32) + '}'
-entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6 + 36, spawny*6-32) + '}'
-entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6 + 72, spawny*6-32) + '}'
-cabx, caby = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, red)
-entities += ',{' + 'type:medCabinet,x:{},y:{}'.format(cabx*6 + 6, caby*6-48) + '}'
-entities += ',{' + 'type:spawnroom,x:0,xscale:{:.2f},y:0,yscale:{:2f}'.format((spawn_width-2)/7, (global_height - 1)/7) + '}'
-entities += ',{' + 'type:redteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((spawn_width-2)*6, global_height/10) + '}'
-#entities
-if MODE == "CP":
-    entities += ',{' + 'type:controlPoint1,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
-    entities += ',{' + 'type:controlPoint2,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
-    global_width *= 2
-    entities += ',{' + 'type:controlPoint3,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
-elif MODE == "DKOTH":
-    entities += ',{' + 'type:KothRedControlPoint,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
-    global_width *= 2
-    entities += ',{' + 'type:KothBlueControlPoint,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
-else:
-    entities += ',{' + 'type:KothControlPoint,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
-    entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
-    global_width *= 2
-entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6, spawny*6-32) + '}'
-entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 36, spawny*6-32) + '}'
-entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 72, spawny*6-32) + '}'
-entities += ',{' + 'type:medCabinet,x:{},y:{}'.format((global_width-cabx-6)*6, caby*6-48) + '}'
-entities += ',{' + 'type:spawnroom,x:{},xscale:{:.2f},y:0,yscale:{:2f}'.format((global_width - spawn_width + 2)*6, (spawn_width - 2)/7, (global_height - 1)/7) + '}'
-entities += ',{' + 'type:blueteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((global_width - spawn_width - 1)*6, global_height/10) + '}]' + chr(10)
-entities += '{END ENTITIES}'
-
-walkmask = get_walk_mask(koth)
-
-#recolour n stuff
-medcab = Image.open("medcab.png")
-koth.paste(medcab, (cabx, caby - 9))
-koth.paste(medcab, (global_width - cabx - 7, caby - 9))
-door = Image.open("door.png")
-dh = pixel_height_in_column(koth, spawn_width - 1, blue)
-koth.paste(door, (spawn_width - 1, dh))
-door = door.transpose(Image.FLIP_LEFT_RIGHT)
-koth.paste(door, (global_width - spawn_width - 1, dh))
-# imageops.colorize needs type L (black/white) images
-# randomgreys
-selected_style = random.choice(style)
-rsgrey = (random.randrange(176, 183) + selected_style[1][0]//2,
-          random.randrange(174, 179) + selected_style[1][1]//2,
-          random.randrange(167, 175) + selected_style[1][2]//2, 255)
-rgrey = (random.randrange(144, 149) + selected_style[1][0],
-         random.randrange(144, 149) + selected_style[1][1],
-         random.randrange(144, 149) + selected_style[1][2], 255)
-(rgr, rgg, rgb, rgs) = rgrey
-bsgrey = (random.randrange(177, 184) + selected_style[1][0]//2,
-          random.randrange(185, 189) + selected_style[1][1]//2,
-          random.randrange(186, 190) + selected_style[1][2]//2, 255)
-get = koth.getpixel
-put = koth.putpixel
-for y in range(8, global_height-17):
-    if y == 17:
-        rgrey = (rgr + 4, rgg + 4, rgb + 4, 255)
-    if y == 32:
-        rgrey = (rgr + 7, rgg + 7, rgb + 7, 255)
-    elif y == 50:
-        rgrey = (rgr + 10, rgg + 10, rgb + 10, 255)
-    for x in range(1, spawn_width - 1):
-        if get((x, y))[3] == 200:
-            if spawny - 7 < y < spawny - 3:    # 139 < y < 143
-                put((x, y), (175, 99, 97, 255))
-                put((global_width - x - 1, y), (97, 129, 176, 255))
+        elif s.path_split < 0:
+            if connected_counter > 0:
+                connected_counter = 0
             else:
-                put((x, y), rsgrey)
-                put((global_width - x - 1, y), bsgrey)
-    for x in range(spawn_width + 1, global_width//2):
-        if get((x, y))[3] == 200:
-            put((x, y), rgrey)
-            put((global_width - x - 1, y), rgrey)
-        elif get((x, y)) == oj:  # ground around point
-            if (x + y) % 3 != 0:
-                put((x, y), black)
-            if (global_width - x - 1 + y) % 3 != 0:
-                put((global_width - x - 1, y), black)
-koth = add_bg(koth, selected_style[0], spawn_width)
-metadata = PngImagePlugin.PngInfo()
-metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
-os.chdir(os.getcwd()[:-13]+"/Maps")
-mapname = "{}_random_{}.png".format(MODE.lower(), seed)
-koth = koth.convert('RGB')
-#koth.show()
-koth.save(mapname, "png", optimize=True, pnginfo=metadata)
-os.chdir(os.getcwd()[:-5])
-file = open("randomname.gg2", "w")
-file.write(mapname[:-4])
-file.close()
+                connected_counter += s.path_split
+                if panic_counter < panic_threshold and connected_counter <= -3:
+                    print("split pop")
+                    l.remove(s)
+                    panic_counter += 1
+                    continue
+        if s.flat:
+            if flat_counter <= 0:
+                flat_counter = global_width - 1  # using global width factor in extensions too
+            if panic_counter >= panic_threshold:  # prevent map from being too flat by forcing a segment
+                s = MapFragment(random.choice(flat_saviors))  # a ls frag which isn't flat
+                flat_counter = 0
+                print("too flat savior")
+            elif flat_distance_threshold <= global_width - flat_counter:
+                print("too flat pop")
+                l.remove(s)
+                panic_counter += 1
+                connected_counter = prev_c_count
+                continue
+        else:
+            if flat_counter >= 0:
+                flat_counter = -global_width + 1
+            if panic_counter < panic_threshold//2 and global_width + flat_counter >= not_flat_distance_threshold:
+                print("not flat pop")
+                l.remove(s)
+                panic_counter += 1
+                connected_counter = prev_c_count
+                continue
+        if short_top:
+            if s.lc == s.rc:  #ss
+                if not s.flip_locked and random.randint(0, 1) == 1:
+                    flip = True
+                if s.unique:
+                    sslist.remove(s)
+            elif s.lc == purple and not s.flip_locked:  #ls
+                short_top = False
+                flip = True
+                if 75 > random.randint(0, 99):
+                    remove_ceiling = True
+                    next_remove_ceiling = True
+                long_counter += 1
+                if s.unique:
+                    lslist.remove(s)
+            else:  # the piece can't be used remove it from the pool
+                l.remove(s)
+                panic_counter += 1
+                continue
+            if (ss_ext.odd + 10*connected_counter) > random.randint(0, 99):
+                extend = ss_ext
+        else:
+            if s.lc == s.rc:  #ll
+                if not s.flip_locked and random.randint(0, 1) == 1:
+                    flip = True
+                if s.unique:
+                    lllist.remove(s)
+            else:  #ls
+                short_top = True
+                next_remove_ceiling = False
+                if s.unique:
+                    lslist.remove(s)
+            if (ll_ext.odd + 10*connected_counter) > random.randint(0, 99):
+                extend = ll_ext
+            long_counter += 1
+
+        if extend:
+            door_position.append(global_width - 1)
+            segment_list.push(Segment(extend, False, global_width, prev_remove_ceil, extension=True), False, False)
+            global_width += extend.length
+
+        door_position.append(global_width - 1)
+        if flip:
+            cl, cr = s.right_removable, s.left_removable
+        else:
+            cl, cr = s.left_removable, s.right_removable
+        segment_list.push(Segment(s, flip, global_width, remove_ceiling, extension=s.name.startswith("ee")), cl, cr)
+        global_width += s.image.width
+
+        if short_top:
+            l = sslist + lslist
+        else:
+            l = lllist + lslist
+        panic_counter = 0
+        remove_ceiling = next_remove_ceiling
+
+    #add the points
+    idx = 3
+    if MODE == "CP" or MODE == "DKOTH":
+        try:
+            while segment_list.l[idx].x - spawn.image.width < 60:
+                idx += 1
+        except IndexError:
+            idx -= 1
+        s = segment_list.l[idx]
+        if s.reversed:
+            if s.f.rc == blue:
+                s = random.choice(spointlist)
+            else:
+                s = random.choice(lpointlist)
+        else:
+            if s.f.lc == blue:
+                s = random.choice(spointlist)
+            else:
+                s = random.choice(lpointlist)
+        global_width += segment_list.insert_at(Segment(s, False, global_width, False), idx, False, False)
+        global_width += segment_list.insert_at(Segment(s, True, global_width, False), idx + 1, False, False)
+
+    if MODE != "DKOTH":
+        extend = None
+        if short_top:
+            s = random.choice(spointlist)
+            if ss_ext.odd > random.randint(0, 99):
+                extend = ss_ext
+        else:
+            s = random.choice(lpointlist)
+            if ll_ext.odd > random.randint(0, 99):
+                extend = ll_ext
+
+        if extend:
+            door_position.append(global_width - 1)
+            segment_list.push(Segment(extend, False, global_width, remove_ceiling, extension=True), False, False)
+            global_width += extend.length
+
+        door_position.append(global_width - 1)
+        segment_list.push(Segment(s, False, global_width, remove_ceiling), False, False)
+        global_width += s.image.width
+
+    koth = segment_list.build_map(global_width)
+
+    #cut black border
+    maxx, maxy = findFirstNonSolid(koth)
+    reverseddraft = koth.transpose(Image.FLIP_TOP_BOTTOM)
+    reverseddraft.putpixel((0, 0), black)
+    minx, miny = findFirstNonSolid(reverseddraft)
+    try:
+        segment_list.remove_ceiling(koth, maxy - 8)
+    except AttributeError:
+        pass
+    if maxy < 8:
+        maxy = 8
+    if miny < 20:
+        miny = 20
+    cropddraft = koth.crop((0, maxy - 8, global_width, 300 - miny + 20))
+    global_height = cropddraft.height
+
+    #get capture point
+    if MODE != "KOTH":
+        cppx, ctpy, cbpy = find_cap_zone(cropddraft, segment_list.l[idx].x + 1, 0, segment_list.l[idx + 1].x - 1, global_height - 1)
+        rx = 2*segment_list.l[idx + 1].x - cppx - 1
+        v = cropddraft.getpixel((cppx, ctpy))
+        cropddraft.putpixel((rx, ctpy), v)
+        v = cropddraft.getpixel((cppx, cbpy))
+        cropddraft.putpixel((rx, cbpy), v)
+    if MODE != "DKOTH":
+        toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
+
+    #final layout, add mirrored half
+    koth = koth.crop((0, 0, 2*global_width, global_height))
+    koth.paste(cropddraft, (0, 0))
+    koth.paste(cropddraft.transpose(Image.FLIP_LEFT_RIGHT), (global_width, 0))
+
+    #red spawn entities
+    spawn_width = spawn.image.width
+    entities = '{ENTITIES}' + chr(10) + '[' + '{background:ffffff,type:meta,void:000000}'
+    spawnx, spawny = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, gold)
+    entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6, spawny*6-32) + '}'
+    entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6 + 36, spawny*6-32) + '}'
+    entities += ',{' + 'type:redspawn,x:{},y:{}'.format(spawnx*6 + 72, spawny*6-32) + '}'
+    cabx, caby = find_pixel_in_box(koth, 2, 0, spawn_width - 1, global_height - 1, red)
+    entities += ',{' + 'type:medCabinet,x:{},y:{}'.format(cabx*6 + 6, caby*6-48) + '}'
+    entities += ',{' + 'type:spawnroom,x:0,xscale:{:.2f},y:0,yscale:{:2f}'.format((spawn_width-2)/7, (global_height - 1)/7) + '}'
+    entities += ',{' + 'type:redteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((spawn_width-2)*6, global_height/10) + '}'
+    #entities
+    if MODE == "CP":
+        entities += ',{' + 'type:controlPoint1,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+        entities += ',{' + 'type:controlPoint2,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
+        global_width *= 2
+        entities += ',{' + 'type:controlPoint3,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+    elif MODE == "DKOTH":
+        entities += ',{' + 'type:KothRedControlPoint,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+        global_width *= 2
+        entities += ',{' + 'type:KothBlueControlPoint,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
+    else:
+        entities += ',{' + 'type:KothControlPoint,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
+        entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(toppx*6, (global_width - toppx)*2/7, toppy*6, (botpy - toppy)/7) + '}'
+        global_width *= 2
+    entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6, spawny*6-32) + '}'
+    entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 36, spawny*6-32) + '}'
+    entities += ',{' + 'type:bluespawn,x:{},y:{}'.format((global_width-spawnx)*6 - 72, spawny*6-32) + '}'
+    entities += ',{' + 'type:medCabinet,x:{},y:{}'.format((global_width-cabx-6)*6, caby*6-48) + '}'
+    entities += ',{' + 'type:spawnroom,x:{},xscale:{:.2f},y:0,yscale:{:2f}'.format((global_width - spawn_width + 2)*6, (spawn_width - 2)/7, (global_height - 1)/7) + '}'
+    entities += ',{' + 'type:blueteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((global_width - spawn_width - 1)*6, global_height/10) + '}]' + chr(10)
+    entities += '{END ENTITIES}'
+
+    walkmask = get_walk_mask(koth)
+
+    #recolour n stuff
+    medcab = Image.open("medcab.png")
+    koth.paste(medcab, (cabx, caby - 9))
+    koth.paste(medcab, (global_width - cabx - 7, caby - 9))
+    door = Image.open("door.png")
+    dh = pixel_height_in_column(koth, spawn_width - 1, blue)
+    koth.paste(door, (spawn_width - 1, dh))
+    door = door.transpose(Image.FLIP_LEFT_RIGHT)
+    koth.paste(door, (global_width - spawn_width - 1, dh))
+    # imageops.colorize needs type L (black/white) images
+    # randomgreys
+    selected_style = random.choice(style)
+    rsgrey = (random.randrange(176, 183) + selected_style[1][0]//2,
+            random.randrange(174, 179) + selected_style[1][1]//2,
+            random.randrange(167, 175) + selected_style[1][2]//2, 255)
+    rgrey = (random.randrange(144, 149) + selected_style[1][0],
+            random.randrange(144, 149) + selected_style[1][1],
+            random.randrange(144, 149) + selected_style[1][2], 255)
+    (rgr, rgg, rgb, rgs) = rgrey
+    bsgrey = (random.randrange(177, 184) + selected_style[1][0]//2,
+            random.randrange(185, 189) + selected_style[1][1]//2,
+            random.randrange(186, 190) + selected_style[1][2]//2, 255)
+    get = koth.getpixel
+    put = koth.putpixel
+    for y in range(8, global_height-17):
+        if y == 17:
+            rgrey = (rgr + 4, rgg + 4, rgb + 4, 255)
+        if y == 32:
+            rgrey = (rgr + 7, rgg + 7, rgb + 7, 255)
+        elif y == 50:
+            rgrey = (rgr + 10, rgg + 10, rgb + 10, 255)
+        for x in range(1, spawn_width - 1):
+            if get((x, y))[3] == 200:
+                if spawny - 7 < y < spawny - 3:    # 139 < y < 143
+                    put((x, y), (175, 99, 97, 255))
+                    put((global_width - x - 1, y), (97, 129, 176, 255))
+                else:
+                    put((x, y), rsgrey)
+                    put((global_width - x - 1, y), bsgrey)
+        for x in range(spawn_width + 1, global_width//2):
+            if get((x, y))[3] == 200:
+                put((x, y), rgrey)
+                put((global_width - x - 1, y), rgrey)
+            elif get((x, y)) == oj:  # ground around point
+                if (x + y) % 3 != 0:
+                    put((x, y), black)
+                if (global_width - x - 1 + y) % 3 != 0:
+                    put((global_width - x - 1, y), black)
+    koth = add_bg(koth, selected_style[0], spawn_width)
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
+    os.chdir(os.getcwd()[:-13]+"/Maps")
+    mapname = "{}_random_{}.png".format(MODE.lower(), seed)
+    koth = koth.convert('RGB')
+    #koth.show()
+    koth.save(mapname, "png", optimize=True, pnginfo=metadata)
+    os.chdir(os.getcwd()[:-5])
+    file = open("randomname.gg2", "w")
+    file.write(mapname[:-4])
+    file.close()
 
