@@ -1,3 +1,5 @@
+import argparse
+import enum
 import random
 from PIL import Image, PngImagePlugin, ImageDraw
 import glob
@@ -44,16 +46,6 @@ style = [
     ("BD", (-44, -34, -36))
     ]
 
-MODE = "KOTH"
-length_max = 250
-if len(sys.argv) > 1:
-    if sys.argv[1] == "CP":
-        MODE = "CP"
-        length_max = 230
-    elif sys.argv[1] == "DKOTH":
-        MODE = "DKOTH"
-        length_max = 180
-
 flat_distance_threshold = 49  # assume average segment length is 20
 not_flat_distance_threshold = 130
 flat_saviors = []
@@ -65,6 +57,12 @@ spointlist = []
 lllist = []
 sslist = []
 lslist = []
+
+
+class GameMode(enum.Enum):
+    KOTH = 'KOTH'
+    CP = 'CP'
+    DKOTH = 'DKOTH'
 
 
 class Fragment:
@@ -473,8 +471,24 @@ def add_bg(map_image, bg_file_name, sw):
     #b.show()
     return b
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="GG2 Random Map Generator")
+    
+    # Adding arguments
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode, open the map as an image")
+    parser.add_argument("--mode", choices=[m.value for m in GameMode], default=GameMode.KOTH.value, help=f"Map type, defaults to KOTH")
+    parser.add_argument("--seed", type=int, default=None, help="Seed for randomization")
+
+    # Parsing arguments
+    args = parser.parse_args()
+
+    args.mode = GameMode[args.mode]
+
+    return args
+
 if __name__ == "__main__":
-    seed = random.getrandbits(32)  # 32 bits seed added as the map name suffix
+    args = parse_args()
+    seed = args.seed if args.seed is not None else random.getrandbits(32)  # 32 bits seed added as the map name suffix
     #seed = 3239445057
     #seed = 2887880279  # flat
     random.seed(seed)
@@ -494,6 +508,13 @@ if __name__ == "__main__":
         elif file.startswith("ls"):
             lslist.append(MapFragment(file))
 
+    MODE: GameMode = args.mode
+    length_max = {
+        GameMode.KOTH: 250,
+        GameMode.CP: 230,
+        GameMode.DKOTH: 180
+    }[MODE]
+
     ss_ext = Extension("ee--c-f1.png", 35, blue, blue)
     sslist.append(ss_ext)  # an extension is still a valid segment
     ll_ext = Extension("ee--c-f2.png", 30, purple, purple)
@@ -502,10 +523,6 @@ if __name__ == "__main__":
     lslist.append(ls_ext)
 
     spawn = random.choice(spawnlist)
-    #segment_list = [spawn]
-    #segment = spawn.image
-    #koth = Image.new('RGBA', segment.size, black)
-    #koth.paste(segment, (0, 0))
     global_width = spawn.image.width
     short_top = True    # all spawns are ss connected
     panic_counter = 0  # prevent picking too many times undesired segments
@@ -516,12 +533,11 @@ if __name__ == "__main__":
     remove_ceiling = False
     segment_list = SegmentList()
     segment_list.push(Segment(spawn, False, 0, False, extension=True), False, False)
-    #map_seg = [Segment(spawn, False, 0)]
 
     previous_width = 0
     previous_anchor = 0
 
-    if MODE == "KOTH":
+    if MODE == GameMode.KOTH:
         l = sslist + lslist
     else:
         l = [ls_ext]
@@ -631,7 +647,7 @@ if __name__ == "__main__":
 
     #add the points
     idx = 3
-    if MODE == "CP" or MODE == "DKOTH":
+    if MODE in (GameMode.CP, GameMode.DKOTH):
         try:
             while segment_list.l[idx].x - spawn.image.width < 60:
                 idx += 1
@@ -651,7 +667,7 @@ if __name__ == "__main__":
         global_width += segment_list.insert_at(Segment(s, False, global_width, False), idx, False, False)
         global_width += segment_list.insert_at(Segment(s, True, global_width, False), idx + 1, False, False)
 
-    if MODE != "DKOTH":
+    if MODE != GameMode.DKOTH:
         extend = None
         if short_top:
             s = random.choice(spointlist)
@@ -690,14 +706,14 @@ if __name__ == "__main__":
     global_height = cropddraft.height
 
     #get capture point
-    if MODE != "KOTH":
+    if MODE != GameMode.KOTH:
         cppx, ctpy, cbpy = find_cap_zone(cropddraft, segment_list.l[idx].x + 1, 0, segment_list.l[idx + 1].x - 1, global_height - 1)
         rx = 2*segment_list.l[idx + 1].x - cppx - 1
         v = cropddraft.getpixel((cppx, ctpy))
         cropddraft.putpixel((rx, ctpy), v)
         v = cropddraft.getpixel((cppx, cbpy))
         cropddraft.putpixel((rx, cbpy), v)
-    if MODE != "DKOTH":
+    if MODE != GameMode.DKOTH:
         toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
 
     #final layout, add mirrored half
@@ -717,7 +733,7 @@ if __name__ == "__main__":
     entities += ',{' + 'type:spawnroom,x:0,xscale:{:.2f},y:0,yscale:{:2f}'.format((spawn_width-2)/7, (global_height - 1)/7) + '}'
     entities += ',{' + 'type:redteamgate,x:{},xscale:3,y:0,yscale:{:2f}'.format((spawn_width-2)*6, global_height/10) + '}'
     #entities
-    if MODE == "CP":
+    if MODE == GameMode.CP:
         entities += ',{' + 'type:controlPoint1,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
         entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
         entities += ',{' + 'type:controlPoint2,x:{},y:{}'.format(global_width*6, (toppy + botpy)*3) + '}'
@@ -725,7 +741,7 @@ if __name__ == "__main__":
         global_width *= 2
         entities += ',{' + 'type:controlPoint3,x:{},y:{}'.format((global_width - segment_list.l[idx + 1].x)*6, (ctpy + cbpy)*3) + '}'
         entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format((global_width - 1 - rx)*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
-    elif MODE == "DKOTH":
+    elif MODE == GameMode.DKOTH:
         entities += ',{' + 'type:KothRedControlPoint,x:{},y:{}'.format(segment_list.l[idx + 1].x*6, (ctpy + cbpy)*3) + '}'
         entities += ',{' + 'type:CapturePoint,x:{},xscale:{:.2f},y:{},yscale:{:.2f}'.format(cppx*6, (segment_list.l[idx + 1].x - cppx)*2/7, ctpy*6, (cbpy - ctpy)/7) + '}'
         global_width *= 2
@@ -797,12 +813,13 @@ if __name__ == "__main__":
     metadata = PngImagePlugin.PngInfo()
     metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
     os.chdir(os.getcwd()[:-13]+"/Maps")
-    mapname = "{}_random_{}.png".format(MODE.lower(), seed)
+    mapname = "{}_random_{}.png".format(MODE.value.lower(), seed)
     koth = koth.convert('RGB')
-    #koth.show()
-    koth.save(mapname, "png", optimize=True, pnginfo=metadata)
+    if args.debug:
+        koth.show()
+    else:
+        koth.save(mapname, "png", optimize=True, pnginfo=metadata)
     os.chdir(os.getcwd()[:-5])
     file = open("randomname.gg2", "w")
     file.write(mapname[:-4])
     file.close()
-
