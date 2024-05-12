@@ -1,0 +1,18 @@
+{
+    "image": "mcr.microsoft.com/vscode/devcontainers/python:latest",
+	// "features": {
+	// 	"ghcr.io/devcontainers/features/python:1": {
+	// 		"version": "latest"
+	// 	}
+	// },
+    "customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			"settings": {},
+			"extensions": [
+				"ms-python.python",
+                "ms-python.debugpy"
+			]
+		}
+	}
+}

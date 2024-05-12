@@ -1,5 +1,6 @@
 import argparse
 import enum
+import pathlib
 import random
 from PIL import Image, PngImagePlugin, ImageDraw
 import glob
@@ -63,6 +64,94 @@ class GameMode(enum.Enum):
     KOTH = 'KOTH'
     CP = 'CP'
     DKOTH = 'DKOTH'
+
+
+class StepObserver:
+    pass
+
+    def new_image(self, img):
+        pass
+
+    def add_segment(self, img):
+        pass
+
+    def remove_ceiling(self, img):
+        pass
+
+    def remove_point_hints(self, img):
+        pass
+
+    def crop_map(self, img):
+        pass
+
+    def make_walkmask(self, img, wm):
+        pass
+
+    def add_background(self, img):
+        pass
+
+    def merge_mirror(self, img):
+        pass
+
+    def resize(self, img, crop_rect):
+        pass
+
+
+class DebugStepObserver(StepObserver):
+    def __init__(self, output_dir: pathlib.Path):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self._dir = output_dir
+        self._step_counter = 0
+        self._images = []
+        self._crop_rect = None
+        self._crop_before = 0
+
+    def _save_image(self, img, step_description=''):
+        filename = self._dir / f'{self._step_counter}{step_description}.png'
+        step_img = img.convert('RGB')
+        step_img.save(str(filename), "png", optimize=True)
+        self._step_counter += 1
+        self._images.append(step_img)
+
+    def add_segment(self, img):
+        self._save_image(img)
+
+    def remove_ceiling(self, img):
+        self._save_image(img, 'ceiling')
+
+    def remove_point_hints(self, img):
+        self._save_image(img, 'colorpoint')
+
+    def crop_map(self, img):
+        self._save_image(img, 'crop')
+
+    def add_background(self, img):
+        self._save_image(img)
+
+    def merge_mirror(self, img):
+        self._save_image(img)
+
+    def resize(self, img, crop_rect):
+        self._crop_before = len(self._images)
+        # self._save_image(img, 'resize')
+        self._crop_rect = crop_rect
+
+    def as_gif(self):
+        first_frame = Image.new("RGB", self._images[-1].size, (0, 0, 0))
+        frames = []
+        # All frames must be the same size otherwise the gif will incorrectly discard frame
+        for i in [i.crop(self._crop_rect) for i in self._images[:self._crop_before]] + self._images[self._crop_before:]:
+            if i.width < first_frame.width:
+                next_frame = first_frame.copy()
+                next_frame.paste(i)
+            else:
+                next_frame = i
+            frames.append(next_frame)
+        # for i, f in enumerate(frames):
+        #     f.save(self._dir / f'frame{i}.png')
+        filename = self._dir / f'output.gif'
+        durations = [120]*len(frames) + [1000]
+        first_frame.save(filename, save_all=True, append_images=frames, loop=0, duration=durations, optimize=True, disposal=1)
 
 
 class Fragment:
@@ -176,7 +265,7 @@ class Segment:
             return self.f.image.transpose(Image.FLIP_LEFT_RIGHT)
         return self.f.image
 
-    def crop(self, map_image):
+    def crop(self, map_image, observer: StepObserver):
         if not self.crop_s:
             return
         get = map_image.getpixel
@@ -226,6 +315,7 @@ class Segment:
                         map_image.putpixel((dx, y1 + 1), door_orange)
                     if get((dx + 1, y1 + 1)) == black:
                         map_image.putpixel((dx + 1, y1 + 1), door_orange)
+                observer.crop_map(map_image)
         except:
             raise IndexError("crop error" + str(seed))
 
@@ -259,12 +349,14 @@ class SegmentList:
                 self.previous_crop = crop_right
             self.l.append(segment)
 
-    def build_map(self, g_width):
+    def build_map(self, g_width, observer: StepObserver):
         map_image = Image.new('RGBA', (g_width, 300), black)
+        observer.new_image(map_image)
         it = iter(self.l)
         i = next(it)  # spawn
         y = 0
         map_image.paste(i.f.image, (0, 0))
+        observer.add_segment(map_image)
         cr = blue
         try:
             while True:
@@ -289,7 +381,8 @@ class SegmentList:
                     pass
                 i.y = y
                 map_image.paste(im, (i.x, y))
-                i.crop(map_image)
+                observer.add_segment(map_image)
+                i.crop(map_image, observer)
                 #map_image.show()
         except StopIteration:
             pass
@@ -324,7 +417,7 @@ class SegmentList:
                 self.l[i].x += dx
             return dx
 
-    def remove_ceiling(self, map_image, ceiling_height):
+    def remove_ceiling(self, map_image, ceiling_height, observer: StepObserver):
         get = map_image.getpixel
         for i in self.l:
             if i.remove_ceil:
@@ -358,6 +451,7 @@ class SegmentList:
                     r = l + i.f.image.width - 1
                 draw = ImageDraw.Draw(map_image)
                 draw.rectangle(((l, ceiling_height), (r, bot)), fill=air_air)
+                observer.remove_ceiling(map_image)
 
 
 def pixel_height_in_column(image, x, color, start_y=0):
@@ -489,10 +583,14 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     seed = args.seed if args.seed is not None else random.getrandbits(32)  # 32 bits seed added as the map name suffix
-    #seed = 3239445057
-    #seed = 2887880279  # flat
     random.seed(seed)
     print(seed)
+
+    if args.debug:
+        observer = DebugStepObserver(output_dir=pathlib.Path(f'{os.getcwd()}/debug/{seed}'))
+    else:
+        observer = StepObserver()
+
     os.chdir(os.getcwd() + "/RMG_resource")
     for file in glob.glob('*.png'):
         if file.startswith("spawn"):
@@ -687,7 +785,7 @@ if __name__ == "__main__":
         segment_list.push(Segment(s, False, global_width, remove_ceiling), False, False)
         global_width += s.image.width
 
-    koth = segment_list.build_map(global_width)
+    koth = segment_list.build_map(global_width, observer)
 
     #cut black border
     maxx, maxy = findFirstNonSolid(koth)
@@ -695,14 +793,16 @@ if __name__ == "__main__":
     reverseddraft.putpixel((0, 0), black)
     minx, miny = findFirstNonSolid(reverseddraft)
     try:
-        segment_list.remove_ceiling(koth, maxy - 8)
+        segment_list.remove_ceiling(koth, maxy - 8, observer)
     except AttributeError:
         pass
     if maxy < 8:
         maxy = 8
     if miny < 20:
         miny = 20
-    cropddraft = koth.crop((0, maxy - 8, global_width, 300 - miny + 20))
+    crop_rect = (0, maxy - 8, global_width, 300 - miny + 20)
+    cropddraft = koth.crop(crop_rect)
+    observer.resize(cropddraft, crop_rect)
     global_height = cropddraft.height
 
     #get capture point
@@ -715,11 +815,13 @@ if __name__ == "__main__":
         cropddraft.putpixel((rx, cbpy), v)
     if MODE != GameMode.DKOTH:
         toppx, toppy, botpy = find_cap_zone(cropddraft, global_width - segment_list.l[-1].f.image.width, 0, global_width - 1, global_height - 1)
+    observer.remove_point_hints(cropddraft)
 
     #final layout, add mirrored half
     koth = koth.crop((0, 0, 2*global_width, global_height))
     koth.paste(cropddraft, (0, 0))
     koth.paste(cropddraft.transpose(Image.FLIP_LEFT_RIGHT), (global_width, 0))
+    observer.merge_mirror(koth)
 
     #red spawn entities
     spawn_width = spawn.image.width
@@ -764,12 +866,16 @@ if __name__ == "__main__":
     #recolour n stuff
     medcab = Image.open("medcab.png")
     koth.paste(medcab, (cabx, caby - 9))
+    observer.add_background(koth)
     koth.paste(medcab, (global_width - cabx - 7, caby - 9))
+    observer.add_background(koth)
     door = Image.open("door.png")
     dh = pixel_height_in_column(koth, spawn_width - 1, blue)
     koth.paste(door, (spawn_width - 1, dh))
+    observer.add_background(koth)
     door = door.transpose(Image.FLIP_LEFT_RIGHT)
     koth.paste(door, (global_width - spawn_width - 1, dh))
+    observer.add_background(koth)
     # imageops.colorize needs type L (black/white) images
     # randomgreys
     selected_style = random.choice(style)
@@ -809,13 +915,16 @@ if __name__ == "__main__":
                     put((x, y), black)
                 if (global_width - x - 1 + y) % 3 != 0:
                     put((global_width - x - 1, y), black)
+    observer.add_background(koth)
     koth = add_bg(koth, selected_style[0], spawn_width)
+    observer.add_background(koth)
     metadata = PngImagePlugin.PngInfo()
     metadata.add_text('Gang Garrison 2 Level Data', entities+walkmask, zip=True)
     os.chdir(os.getcwd()[:-13]+"/Maps")
     mapname = "{}_random_{}.png".format(MODE.value.lower(), seed)
     koth = koth.convert('RGB')
     if args.debug:
+        observer.as_gif()
         koth.show()
     else:
         koth.save(mapname, "png", optimize=True, pnginfo=metadata)

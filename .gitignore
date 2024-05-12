@@ -1,6 +1,7 @@
 Thumbs.db
 __pycache__/
 .idea/
-.Maps/
+Maps/
+debug/
 .Screenshots/
 *.gg2

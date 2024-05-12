@@ -1,17 +1,17 @@
 object_event_add(WinBanner, ev_create, 0, "
     if (global.nextMap = 'koth_random') {
         //run mapgenerator.exe with no arguments
-        execute_shell('mapgenerator.pyw','');
+        execute_shell('mapgenerator.exe','');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
     else if (global.nextMap = 'cp_random') {
         //run mapgenerator.exe with cp
-        execute_shell('mapgenerator.pyw','CP');
+        execute_shell('mapgenerator.exe','CP');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
     else if (global.nextMap = 'dkoth_random') {
         //run mapgenerator.exe with cp
-        execute_shell('mapgenerator.pyw','DKOTH');
+        execute_shell('mapgenerator.exe','DKOTH');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
 ");
