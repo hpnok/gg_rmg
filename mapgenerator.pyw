@@ -566,6 +566,8 @@ def add_bg(map_image, bg_file_name, sw):
     return b
 
 def parse_args():
+    # Note that help strings won't be displayed once compiled with pyinstaller
+    # https://groups.google.com/g/pyinstaller/c/I4jhSfu_s54/m/GCSFcoU8aNAJ
     parser = argparse.ArgumentParser(description="GG2 Random Map Generator")
     
     # Adding arguments
