@@ -1,18 +1,20 @@
 {
-    "image": "mcr.microsoft.com/vscode/devcontainers/python:latest",
+	"image": "mcr.microsoft.com/vscode/devcontainers/python:latest",
 	// "features": {
 	// 	"ghcr.io/devcontainers/features/python:1": {
 	// 		"version": "latest"
 	// 	}
 	// },
-    "customizations": {
+	"customizations": {
 		// Configure properties specific to VS Code.
 		"vscode": {
 			"settings": {},
 			"extensions": [
 				"ms-python.python",
-                "ms-python.debugpy"
+				"ms-python.debugpy",
+				"github.vscode-github-actions"
 			]
 		}
-	}
+	},
+	"postStartCommand": "python -m pip install -r requirements.txt"
 }

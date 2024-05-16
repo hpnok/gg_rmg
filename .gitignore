@@ -1,6 +1,8 @@
 Thumbs.db
 __pycache__/
 .idea/
+build/
+dist/
 Maps/
 debug/
 .Screenshots/
