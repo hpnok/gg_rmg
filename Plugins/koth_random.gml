@@ -6,12 +6,12 @@ object_event_add(WinBanner, ev_create, 0, "
     }
     else if (global.nextMap = 'cp_random') {
         //run mapgenerator.exe with cp
-        execute_shell('mapgenerator.exe','CP');
+        execute_shell('mapgenerator.exe','--mode','CP');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
     else if (global.nextMap = 'dkoth_random') {
         //run mapgenerator.exe with cp
-        execute_shell('mapgenerator.exe','DKOTH');
+        execute_shell('mapgenerator.exe','--mode','DKOTH');
         alarm[0] = 5 * 30 * global.delta_factor;
     }
 ");
